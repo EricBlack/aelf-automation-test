@@ -6,10 +6,8 @@ using System.Threading.Tasks;
 using AElf;
 using AElf.Types;
 using AElfChain.Common;
-using AElfChain.Common.Contracts;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElfChain.Console.InputOption;
 using AElfChain.SDK;
 using AElfChain.SDK.Models;
 using Google.Protobuf.WellKnownTypes;
@@ -75,8 +73,10 @@ namespace AElfChain.Console.Commands
         }
         private void ChainsStatus()
         {
-            "Parameter: [ServiceUrl] [ServiceUrl]...".WriteSuccessLine();
-            var input = CommandOption.InputParameters(1);
+            //"Parameter: [ServiceUrl] [ServiceUrl]...".WriteSuccessLine();
+            //var input = CommandOption.InputParameters(1);
+            var endpoints = NodeInfoHelper.Config.Nodes.Select(o => o.Endpoint).ToList();
+            var input = Prompt.MultiSelect("Select endpoint(s)", endpoints);
             var nodeManagers = new List<NodeManager>();
             input.ToList().ForEach(o =>
             {
@@ -245,8 +245,10 @@ namespace AElfChain.Console.Commands
         }
         private void TransactionPoolAnalyze()
         {
-            "Parameter: [ServiceUrl] [ServiceUrl]...".WriteSuccessLine();
-            var input = CommandOption.InputParameters(1);
+            //"Parameter: [ServiceUrl] [ServiceUrl]...".WriteSuccessLine();
+            //var input = CommandOption.InputParameters(1);
+            var endpoints = NodeInfoHelper.Config.Nodes.Select(o => o.Endpoint).ToList();
+            var input = Prompt.MultiSelect("Select endpoint(s)", endpoints);
             var nodeManagers = new List<NodeManager>();
             input.ToList().ForEach(o =>
             {

@@ -177,6 +177,24 @@ namespace AElfChain.Common.Managers
 
             return transactionOutput.TransactionId;
         }
+        
+        public string SendTransaction(string from, string to, string methodName, IMessage inputParameter, out bool existed)
+        {
+            var rawTransaction = GenerateRawTransaction(from, to, methodName, inputParameter);
+            //check whether tx exist or not
+            var genTxId = TransactionUtil.CalculateTxId(rawTransaction);
+            var transactionResult = ApiService.GetTransactionResultAsync(genTxId).Result;
+            if (transactionResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.NotExisted)
+            {
+                Logger.Warn("Found duplicate transaction.");
+                existed = true;
+                return transactionResult.TransactionId;
+            }
+
+            existed = false;
+            var transactionOutput = AsyncHelper.RunSync(() => ApiService.SendTransactionAsync(rawTransaction));
+            return transactionOutput.TransactionId;
+        }
 
         public string SendTransaction(string rawTransaction)
         {
@@ -229,7 +247,7 @@ namespace AElfChain.Common.Managers
                 {
                     case TransactionResultStatus.Mined:
                         Logger.Info(
-                            $"Transaction {txId} status: {status}-[{transactionResult.TransactionFee?.GetTransactionFeeInfo()}]",
+                            $"Transaction {txId} Method:{transactionResult.Transaction.MethodName}, Status: {status}-[{transactionResult.TransactionFee?.GetTransactionFeeInfo()}]",
                             true);
                         return transactionResult;
                     case TransactionResultStatus.Failed:
@@ -242,17 +260,24 @@ namespace AElfChain.Common.Managers
                         Logger.Error(message, true);
                         return transactionResult;
                     }
+                    case TransactionResultStatus.Pending:
+                        checkTimes++;
+                        break;
+                    case TransactionResultStatus.NotExisted:
+                        checkTimes += 10;
+                        break;
+                    case TransactionResultStatus.Unexecutable:
+                        checkTimes += 20;
+                        break;
                 }
 
                 Console.Write(
                     $"\rTransaction {txId} status: {status}, time using: {CommonHelper.ConvertMileSeconds(stopwatch.ElapsedMilliseconds)}");
-
-                checkTimes++;
                 Thread.Sleep(500);
             }
 
             Console.Write("\r\n");
-            throw new TimeoutException("Transaction execution status cannot be 'Mined' after five minutes.");
+            throw new TimeoutException("Transaction execution status cannot be 'Mined' after long time.");
         }
 
         public void CheckTransactionListResult(List<string> transactionIds)
@@ -283,6 +308,7 @@ namespace AElfChain.Common.Managers
                         break;
                 }
             }
+            stopwatch.Stop();
         }
 
         public T QueryView<T>(string from, string to, string methodName, IMessage inputParameter)

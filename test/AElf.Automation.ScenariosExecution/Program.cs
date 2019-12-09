@@ -25,9 +25,12 @@ namespace AElf.Automation.ScenariosExecution
         private void OnExecute(CommandLineApplication app)
         {
             if (ConfigFile != null) NodeInfoHelper.SetConfig(ConfigFile);
-            
             Log4NetHelper.LogInit($"ScenarioTest_Hour_{DateTime.Now.Hour:00}");
-
+            Logger = Log4NetHelper.GetLogger();
+            
+            //prepare account
+            OldEnvCheck.PrepareTestAccounts();
+            
             var multipleTasks = new MultipleTasks();
             multipleTasks.RunScenariosByTasks();
 

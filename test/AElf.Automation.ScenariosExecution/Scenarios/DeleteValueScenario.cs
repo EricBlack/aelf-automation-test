@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using AElf.Contracts.TestContract.BasicFunctionWithParallel;
 using AElfChain.Common.Contracts;
-using AElfChain.Common.Managers;
+using Shouldly;
 
 namespace AElf.Automation.ScenariosExecution.Scenarios
 {
@@ -9,33 +11,36 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
     {
         private const int IncreaseActionCount = 10;
         private List<BasicWithParallelContract> _contracts;
+        
+        public List<string> Testers { get; }
 
         public DeleteValueScenario()
         {
             InitializeScenario();
-            var contract = new BasicWithParallelContract(Services.NodeManager, AllTesters[0]);
-            Services.NodeManager.WaitCurrentHeightToLib();
-            var testers = AllTesters.GetRange(1, 2);
-            _contracts = testers.Select(t =>
+            Testers = AllTesters.GetRange(5, 5);
+            PrintTesters(nameof(DeleteValueScenario), Testers);
+            
+            var contract = BasicWithParallelContract.GetOrDeployBasicWithParallelContract(Services.NodeManager, Testers[0]);
+            _contracts = Testers.Select(t =>
                 new BasicWithParallelContract(Services.NodeManager, t, contract.ContractAddress)).ToList();
         }
 
-
         public void RunDeleteValueScenarioJob()
         {
-//            ExecuteStandaloneTask(new Action[]
-//            {
-//                DeleteValueAction,
-//                IncreaseValueAction,
-//                DeleteValueParallelAction,
-//                IncreaseValueParallelAction,
-//                DeleteValueAfterSetAction,
-//                SetValueAfterDeleteAction,
-//                ComplexDeleteAndChangeAction
-//            });
+            ExecuteStandaloneTask(new Action[]
+            {
+                DeleteValueAction,
+                IncreaseValueAction,
+                DeleteValueParallelAction,
+                IncreaseValueParallelAction,
+                DeleteValueAfterSetAction,
+                SetValueAfterDeleteAction,
+                ComplexDeleteAndChangeAction,
+                () => PrepareTesterToken(Testers),
+                UpdateEndpointAction
+            });
         }
 
-        /*
         private void IncreaseValueAction()
         {
             foreach (var contract in _contracts)
@@ -259,6 +264,5 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             CheckValue("");
             CheckValue((MessageValue)null);
         }
-        */
     }
 }

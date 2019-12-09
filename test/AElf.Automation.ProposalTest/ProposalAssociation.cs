@@ -35,6 +35,7 @@ namespace AElf.Automation.ProposalTest
         {
             ExecuteStandaloneTask(new Action[]
             {
+                TransferToTester,
                 CreateOrganization,
                 TransferToVirtualAccount,
                 CreateProposal,
@@ -299,12 +300,12 @@ namespace AElf.Automation.ProposalTest
             foreach (var organization in OrganizationList)
             {
                 var balance = Token.GetUserBalance(organization.Key.GetFormatted(), Symbol);
-                if (balance > 10) continue;
+                if (balance > 10_00000000) continue;
                 Token.ExecuteMethodWithResult(TokenMethod.Transfer, new TransferInput
                 {
                     Symbol = Symbol,
                     To = organization.Key,
-                    Amount = 10000_00,
+                    Amount = 100_00000000,
                     Memo = "Transfer to organization address"
                 });
 

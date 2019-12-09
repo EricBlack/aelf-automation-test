@@ -13,15 +13,14 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
 {
     public class ExceptionScenario : BaseScenario
     {
-        public new static readonly ILog Logger = Log4NetHelper.GetLogger();
-
         public ExceptionScenario()
         {
             InitializeScenario();
             Token = Services.TokenService;
             Genesis = Services.GenesisService;
 
-            Testers = AllTesters.GetRange(80, 20);
+            Testers = AllTesters.GetRange(10, 5);
+            PrintTesters(nameof(ExceptionScenario), Testers);
         }
 
         public TokenContract Token { get; }

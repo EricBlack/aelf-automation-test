@@ -8,7 +8,6 @@ using AElfChain.Common.Contracts;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
 using AElfChain.Common.Utils;
-using Google.Protobuf.WellKnownTypes;
 using log4net;
 
 namespace AElf.Automation.RpcPerformance
@@ -25,20 +24,26 @@ namespace AElf.Automation.RpcPerformance
 
         public TokenContract SystemToken { get; set; }
 
-        public void ExecuteTokenCheckTask(List<string> testers)
+        public void ExecuteTokenCheckTask(List<string> testers, CancellationToken ct)
         {
+            var checkRound = 1;
             while (true)
             {
-                Thread.Sleep(10 * 60 * 1000);
+                if (ct.IsCancellationRequested)
+                {
+                    Logger.Warn("ExecuteTokenCheckTask was been cancelled.");
+                    break;
+                }
+
+                Thread.Sleep(3 * 60 * 1000);
                 try
                 {
-                    Logger.Info("Start check tester token balance job.");
+                    Logger.Info($"Start check tester token balance job round: {checkRound++}");
                     TransferTokenForTest(testers);
                 }
                 catch (Exception e)
                 {
-                    Logger.Error(e);
-                    break;
+                    Logger.Error(e.Message);
                 }
             }
         }
@@ -51,7 +56,7 @@ namespace AElf.Automation.RpcPerformance
             foreach (var bp in bps)
             {
                 var balance = SystemToken.GetUserBalance(bp.Account, symbol);
-                if (balance < 200_0000_00000000) continue;
+                if (balance < 300_0000_00000000) continue;
                 SystemToken.SetAccount(bp.Account, bp.Password);
                 foreach (var tester in testers)
                 {
@@ -68,6 +73,7 @@ namespace AElf.Automation.RpcPerformance
                 }
 
                 SystemToken.CheckTransactionResultList();
+                break;
             }
         }
 

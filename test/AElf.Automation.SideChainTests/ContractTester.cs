@@ -12,6 +12,7 @@ using AElf.Types;
 using AElfChain.SDK.Models;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
+using Shouldly;
 using Volo.Abp.Threading;
 using ApproveInput = Acs3.ApproveInput;
 
@@ -71,7 +72,7 @@ namespace AElf.Automation.SideChainTests
         {
             ParliamentService.SetAccount(account);
             var address =
-                ParliamentService.CallViewMethod<Address>(ParliamentMethod.GetGenesisOwnerAddress, new Empty());
+                ParliamentService.CallViewMethod<Address>(ParliamentMethod.GetDefaultOrganizationAddress, new Empty());
 
             return address;
         }
@@ -80,7 +81,6 @@ namespace AElf.Automation.SideChainTests
             int indexingPrice,
             long lockedTokenAmount, bool isPrivilegePreserved)
         {
-            var code = ByteString.FromBase64("4d5a90000300");
             var createProposalInput = new SideChainCreationRequest
             {
                 IndexingPrice = indexingPrice,
@@ -117,6 +117,14 @@ namespace AElf.Automation.SideChainTests
 
         public TransactionResultDto Recharge(string account, int chainId, long amount)
         {
+//            var approve = TokenService.ExecuteMethodWithResult(TokenMethod.Approve, new AElf.Contracts.MultiToken.ApproveInput
+//            {
+//                Spender = CrossChainService.Contract,
+//                Symbol = "ELF",
+//                Amount = amount
+//            });
+//            approve.Status.ShouldBe("MINED");
+            
             CrossChainService.SetAccount(account);
             var result =
                 CrossChainService.ExecuteMethodWithResult(CrossChainContractMethod.Recharge, new RechargeInput

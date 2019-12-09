@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AElfChain.Common.Contracts;
 using AElfChain.Common.Helpers;
@@ -150,9 +152,9 @@ namespace AElf.Automation.Contracts.ScenarioTest
             var genesis = nodeManager.GetGenesisContract();
             var token = genesis.GetTokenContract();
             var byteInfo = nodeManager.ApiService.GetContractFileDescriptorSetAsync(token.ContractAddress).Result;
-            var customContractHander = new CustomContractHandler(byteInfo);
-            customContractHander.GetAllMethodsInfo();
-            customContractHander.GetParameters("Create");
+            var customContractHandler = new CustomContractHandler(byteInfo);
+            customContractHandler.GetAllMethodsInfo(true);
+            customContractHandler.GetParameters("Create");
         }
 
         [TestMethod]
@@ -191,6 +193,19 @@ namespace AElf.Automation.Contracts.ScenarioTest
                     Signature = signature
                 });
             Console.WriteLine(rawTransactionResult);
+        }
+
+        [TestMethod]
+        public void CreateTestAccount()
+        {
+            var keyPath = "/Users/ericshu/GitHub/Team/aelf-automation-test/test/AElf.Automation.ScenariosExecution/testers";
+            var keyStore = AElfKeyStore.GetKeyStore(keyPath);
+            var accManager = new AccountManager(keyStore);
+            for (var i = 0; i < 100; i++)
+            {
+                var acc = accManager.NewAccount();
+                accManager.UnlockAccount(acc);
+            }
         }
     }
 }

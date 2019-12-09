@@ -36,7 +36,8 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             Profit.GetTreasurySchemes(Treasury.ContractAddress);
             Schemes = ProfitContract.Schemes;
 
-            Testers = AllTesters.GetRange(50, 30);
+            Testers = AllTesters.GetRange(80, 20);
+            PrintTesters(nameof(UserScenario), Testers);
         }
 
         public TreasuryContract Treasury { get; }
@@ -61,7 +62,9 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             ExecuteStandaloneTask(new Action[]
             {
                 UserVotesAction,
-                TakeVotesProfitAction
+                TakeVotesProfitAction,
+                () => PrepareTesterToken(Testers),
+                UpdateEndpointAction
             });
         }
 
@@ -109,15 +112,28 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 return;
 
             Logger.Info($"Profit amount: user {account} profit amount is {profitAmount}");
-            //Profit.SetAccount(account);
+            var beforeBalance = Token.GetUserBalance(account);
             var profit = Profit.GetNewTester(account);
             var profitResult = profit.ExecuteMethodWithResult(ProfitMethod.ClaimProfits, new ClaimProfitsInput
             {
                 SchemeId = schemeId,
                 Symbol = NodeOption.NativeTokenSymbol
-            });
+            }, out var existed);
+            if (existed) return; //交易已经存在，不再执行
+            if (profitResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
 
-            if (profitResult.Status.ConvertTransactionResultStatus() == TransactionResultStatus.Mined)
+            var checkResult = true;
+            var profitTransactionFee = profitResult.TransactionFee.GetDefaultTransactionFee();
+            var afterBalance = Token.GetUserBalance(account);
+
+            if (afterBalance + profitTransactionFee != beforeBalance + profitAmount)
+            {
+                Logger.Error(
+                    $"Check profit balance failed: {afterBalance + profitTransactionFee}/{beforeBalance + profitAmount}");
+                checkResult = false;
+            }
+
+            if (checkResult)
                 Logger.Info(
                     $"Profit success - user {account} get vote profit from Id: {schemeId}, value is: {profitAmount}");
         }
@@ -125,12 +141,14 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
         private void UserVote(string account)
         {
             var lockTime = GenerateRandomNumber(3, 30) * 30;
+
             var amount = GenerateRandomNumber(1, 5) * 5;
             if (_candidatesExcludeMiners.Count != 0)
             {
                 var id = GenerateRandomNumber(0, _candidatesExcludeMiners.Count - 1);
                 UserVote(account, _candidatesExcludeMiners[id], lockTime, amount);
             }
+
             else
             {
                 var id = GenerateRandomNumber(0, _candidates.Count - 1);
@@ -142,34 +160,68 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
         {
             var beforeElfBalance = Token.GetUserBalance(account);
             var beforeVoteBalance = Token.GetUserBalance(account, "VOTE");
+
+            var beforeCandidateVote = Election.GetCandidateVoteCount(candidatePublicKey);
             if (beforeElfBalance < amount * 10000_0000) // balance not enough, bp transfer again
             {
-                var token = Token.GetNewTester(BpNodes.First().Account);
-                token.ExecuteMethodWithResult(TokenMethod.Transfer, new TransferInput
+                const long transferAmount = 1_0000_00000000L;
+                var token = Token.GetNewTester(AllNodes.First().Account);
+                var transferTxResult = token.ExecuteMethodWithResult(TokenMethod.Transfer, new TransferInput
                 {
                     Symbol = NodeOption.NativeTokenSymbol,
-                    Amount = 10_0000_00000000,
+                    Amount = transferAmount,
                     To = AddressHelper.Base58StringToAddress(account),
                     Memo = $"Transfer for voting = {Guid.NewGuid()}"
                 });
+                if (transferTxResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
+                beforeElfBalance = Token.GetUserBalance(account);
             }
 
             var election = Election.GetNewTester(account);
-            election.ExecuteMethodWithResult(ElectionMethod.Vote, new VoteMinerInput
+
+            var voteResult = election.ExecuteMethodWithResult(ElectionMethod.Vote, new VoteMinerInput
             {
                 CandidatePubkey = candidatePublicKey,
                 Amount = amount,
                 EndTimestamp = DateTime.UtcNow.Add(TimeSpan.FromDays(lockTime))
                     .Add(TimeSpan.FromHours(1))
                     .ToTimestamp()
-            });
-
+            }, out var existed);
+            if (existed) return;
+            if (voteResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
             var afterElfBalance = Token.GetUserBalance(account);
             var afterVoteBalance = Token.GetUserBalance(account, "VOTE");
-            if (beforeElfBalance == afterElfBalance + amount * 100000000 &&
-                beforeVoteBalance == afterVoteBalance - amount)
+            var transactionFee = voteResult.TransactionFee.GetDefaultTransactionFee();
+            var afterCandidateVote = Election.GetCandidateVoteCount(candidatePublicKey);
+
+            var checkResult = true;
+
+            //check vote result process
+            if (beforeElfBalance != afterElfBalance + amount * 10000_0000L + transactionFee)
+            {
+                Logger.Error(
+                    $"User vote cost balance check failed. ELF: {beforeElfBalance}/{afterElfBalance + amount * 10000_0000L + transactionFee}");
+                checkResult = false;
+            }
+
+            if (afterVoteBalance != beforeVoteBalance + amount)
+            {
+                Logger.Error(
+                    $"User vote receive VOTE token balance check failed. VOTE: {beforeVoteBalance}/{afterVoteBalance - amount}");
+                checkResult = false;
+            }
+
+            if (beforeCandidateVote != afterCandidateVote - amount)
+            {
+                Logger.Error(
+                    $"Candidate vote count check failed. Ticket: {beforeCandidateVote + amount}/{afterCandidateVote}");
+                checkResult = false;
+            }
+
+            if (checkResult)
                 Logger.Info(
-                    $"Vote success - {account} vote candidate: {candidatePublicKey} with amount: {amount} lock time: {lockTime} days.");
+                    $"Vote success - {account} vote candidate: {candidatePublicKey} with amount: {amount} lock time: {lockTime} days."
+                );
         }
 
         public static void GetCandidates(ElectionContract election)
