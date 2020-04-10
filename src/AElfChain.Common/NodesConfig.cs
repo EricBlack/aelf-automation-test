@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AElf.Client.Service;
 using AElfChain.Common.Contracts;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElfChain.SDK;
 using Newtonsoft.Json;
 
 namespace AElfChain.Common
@@ -16,8 +16,8 @@ namespace AElfChain.Common
         [JsonProperty("account")] public string Account { get; set; }
         [JsonProperty("password")] public string Password { get; set; }
         [JsonIgnore] public string PublicKey { get; set; }
-        [JsonIgnore] public bool Status { get; set; } = false;
-        [JsonIgnore] public IApiService ApiService { get; set; }
+        [JsonIgnore] public bool Status { get; set; }
+        [JsonIgnore] public AElfClient ApiClient { get; set; }
     }
 
     public class NodesInfo
@@ -69,20 +69,27 @@ namespace AElfChain.Common
         {
             if (!name.Contains(".json"))
                 name += ".json";
+            _instance = null;
             ConfigFile = CommonHelper.MapPath($"config/{name}");
         }
-        
+
         public static List<string> GetAccounts()
         {
             return _instance.Nodes.Select(o => o.Account).ToList();
         }
-        
+
+        public static NodesInfo ReadConfigInfo(string configFile)
+        {
+            var content = File.ReadAllText(configFile);
+            return JsonConvert.DeserializeObject<NodesInfo>(content);
+        }
+
         private static NodesInfo GetConfigInfo()
         {
             lock (LockObj)
             {
                 if (_instance != null) return _instance;
-                
+
                 _jsonContent = File.ReadAllText(ConfigFile);
                 _instance = JsonConvert.DeserializeObject<NodesInfo>(_jsonContent);
             }

@@ -1,16 +1,16 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
+using System.Linq;
 using Acs3;
-using AElfChain.Common.Contracts;
 using AElf.Contracts.MultiToken;
-using AElf.Contracts.ReferendumAuth;
-using AElf.Kernel;
-using AElf.Sdk.CSharp;
+using AElf.Contracts.Referendum;
+using AElf.CSharp.Core.Extension;
 using AElf.Types;
-using AElfChain.SDK.Models;
+using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
 using Google.Protobuf;
-using ApproveInput = Acs3.ApproveInput;
+using Shouldly;
 
 namespace AElf.Automation.ProposalTest
 {
@@ -19,16 +19,15 @@ namespace AElf.Automation.ProposalTest
         public ProposalReferendum()
         {
             Initialize();
-            Referendum = Services.ReferendumService;
-            Token = Services.TokenService;
+            Referendum = Services.Referendum;
+            Token = Services.Token;
         }
 
-        private Dictionary<Address, long> OrganizationList { get; set; }
-        private Dictionary<KeyValuePair<Address, long>, List<string>> ProposalList { get; set; }
-        private List<string> ReleaseProposalList { get; set; }
-        private List<string> ReleaseMinedProposal { get; set; }
-
-        private List<VoterInfo> VoterInfos { get; set; }
+        private List<Address> OrganizationList { get; set; }
+        private Dictionary<Address, List<Hash>> ProposalList { get; set; }
+        private List<Hash> ReleaseProposalList { get; set; }
+        private Dictionary<Hash, List<ApproveInfo>> ProposalApproveList { get; set; }
+        private Dictionary<Address, long> BalanceInfo { get; set; }
 
         private ReferendumAuthContract Referendum { get; }
         private TokenContract Token { get; }
@@ -39,7 +38,6 @@ namespace AElf.Automation.ProposalTest
             {
                 TransferToTester,
                 CreateOrganization,
-                TransferToVoter,
                 TransferToVirtualAccount,
                 CreateProposal,
                 ApproveProposal,
@@ -53,62 +51,75 @@ namespace AElf.Automation.ProposalTest
         private void CreateOrganization()
         {
             Logger.Info("Create organization:");
-            OrganizationList = new Dictionary<Address, long>();
+            OrganizationList = new List<Address>();
             var txIdList = new Dictionary<CreateOrganizationInput, string>();
-            var inputList = new Dictionary<long, CreateOrganizationInput>();
-            for (var i = 0; i < 4; i++)
+            var inputList = new List<CreateOrganizationInput>();
+            foreach (var proposer in Tester)
             {
-                var rd = GenerateRandomNumber(1, 1000);
+                var rd = GenerateRandomNumber(500, 1000);
                 var createOrganizationInput = new CreateOrganizationInput
                 {
-                    ReleaseThreshold = rd,
-                    TokenSymbol = NativeToken
+                    ProposalReleaseThreshold = new ProposalReleaseThreshold
+                    {
+                        MaximalAbstentionThreshold = 1000 - rd,
+                        MaximalRejectionThreshold = 1000 - rd,
+                        MinimalApprovalThreshold = rd,
+                        MinimalVoteThreshold = rd
+                    },
+                    ProposerWhiteList = new ProposerWhiteList
+                    {
+                        Proposers = {proposer.ConvertAddress()}
+                    },
+                    TokenSymbol = Token.GetNativeTokenSymbol()
                 };
-                inputList.Add(rd, createOrganizationInput);
+                inputList.Add(createOrganizationInput);
             }
 
             foreach (var input in inputList)
             {
                 var txId =
-                    Referendum.ExecuteMethodWithTxId(ReferendumMethod.CreateOrganization, input.Value);
-                txIdList.Add(input.Value, txId);
+                    Referendum.ExecuteMethodWithTxId(ReferendumMethod.CreateOrganization, input);
+                txIdList.Add(input, txId);
             }
 
             foreach (var (key, value) in txIdList)
             {
-                var checkTime = 5;
                 var result = Referendum.NodeManager.CheckTransactionResult(value);
                 var status = result.Status.ConvertTransactionResultStatus();
-                while (status == TransactionResultStatus.NotExisted && checkTime > 0)
-                {
-                    checkTime--;
-                    Thread.Sleep(2000);
-                }
-
                 if (status != TransactionResultStatus.Mined)
                 {
-                    Logger.Error($"Create organization address failed. ReleaseThreshold is {key.ReleaseThreshold}");
+                    Logger.Error("Create organization address failed.");
                 }
                 else
                 {
                     var organizationAddress =
-                        AddressHelper.Base58StringToAddress(result.ReadableReturnValue.Replace("\"", ""));
-                    if (OrganizationList.ContainsKey(organizationAddress)) continue;
-                    OrganizationList.Add(organizationAddress, key.ReleaseThreshold);
+                        Address.Parser.ParseFrom(ByteArrayHelper.HexStringToByteArray(result.ReturnValue));
+                    var info = Referendum.GetOrganization(organizationAddress);
+                    info.OrganizationAddress.ShouldBe(organizationAddress);
+                    info.ProposalReleaseThreshold.MaximalAbstentionThreshold.ShouldBe(key.ProposalReleaseThreshold
+                        .MaximalAbstentionThreshold);
+                    info.ProposalReleaseThreshold.MaximalRejectionThreshold.ShouldBe(key.ProposalReleaseThreshold
+                        .MaximalRejectionThreshold);
+                    info.ProposalReleaseThreshold.MinimalApprovalThreshold.ShouldBe(key.ProposalReleaseThreshold
+                        .MinimalApprovalThreshold);
+                    info.ProposalReleaseThreshold.MinimalVoteThreshold.ShouldBe(key.ProposalReleaseThreshold
+                        .MinimalVoteThreshold);
+                    OrganizationList.Add(organizationAddress);
+                    Logger.Info(
+                        $"Referendum organization : {organizationAddress}, MinimalVoteThreshold is {key.ProposalReleaseThreshold.MinimalVoteThreshold}");
                 }
             }
-
-            foreach (var (key, value) in OrganizationList)
-                Logger.Info($"Referendum organization : {key}, ReleaseThreshold is {value}");
         }
 
         private void CreateProposal()
         {
             Logger.Info("Create Proposal");
-            var txIdInfos = new Dictionary<KeyValuePair<Address, long>, List<string>>();
-            ProposalList = new Dictionary<KeyValuePair<Address, long>, List<string>>();
+            var txIdInfos = new Dictionary<Address, List<string>>();
+            ProposalList = new Dictionary<Address, List<Hash>>();
             foreach (var organizationAddress in OrganizationList)
             {
+                var balance = Token.GetUserBalance(organizationAddress.GetFormatted(), Symbol);
+                if (balance < 100 * OrganizationList.Count) continue;
                 var txIdList = new List<string>();
                 foreach (var toOrganizationAddress in OrganizationList)
                 {
@@ -116,22 +127,23 @@ namespace AElf.Automation.ProposalTest
 
                     var transferInput = new TransferInput
                     {
-                        To = toOrganizationAddress.Key,
+                        To = toOrganizationAddress,
                         Symbol = Symbol,
-                        Amount = 10,
+                        Amount = 100,
                         Memo = "virtual account transfer virtual account"
                     };
 
                     var createProposalInput = new CreateProposalInput
                     {
-                        ToAddress = AddressHelper.Base58StringToAddress(Token.ContractAddress),
-                        OrganizationAddress = organizationAddress.Key,
+                        ToAddress = Token.ContractAddress.ConvertAddress(),
+                        OrganizationAddress = organizationAddress,
                         ContractMethodName = TokenMethod.Transfer.ToString(),
-                        ExpiredTime = TimestampHelper.GetUtcNow().AddDays(1),
+                        ExpiredTime = KernelHelper.GetUtcNow().AddDays(2),
                         Params = transferInput.ToByteString()
                     };
 
-                    Referendum.SetAccount(InitAccount);
+                    var proposer = Referendum.GetOrganization(organizationAddress).ProposerWhiteList.Proposers.First();
+                    Referendum.SetAccount(proposer.GetFormatted());
                     var txId = Referendum.ExecuteMethodWithTxId(ReferendumMethod.CreateProposal, createProposalInput);
                     txIdList.Add(txId);
                 }
@@ -139,29 +151,21 @@ namespace AElf.Automation.ProposalTest
                 txIdInfos.Add(organizationAddress, txIdList);
             }
 
-
             foreach (var (key, value) in txIdInfos)
             {
-                var proposalIds = new List<string>();
+                var proposalIds = new List<Hash>();
                 foreach (var txId in value)
                 {
-                    var checkTime = 5;
                     var result = Referendum.NodeManager.CheckTransactionResult(txId);
                     var status = result.Status.ConvertTransactionResultStatus();
-                    while (status == TransactionResultStatus.NotExisted && checkTime > 0)
-                    {
-                        checkTime--;
-                        Thread.Sleep(2000);
-                    }
-
                     if (status != TransactionResultStatus.Mined)
                     {
                         Logger.Error("Create proposal Failed.");
                     }
                     else
                     {
-                        var proposal = result.ReadableReturnValue.Replace("\"", "");
-                        Logger.Info($"Create proposal {proposal} through organization address {key.Key}");
+                        var proposal = Hash.Parser.ParseFrom(ByteArrayHelper.HexStringToByteArray(result.ReturnValue));
+                        Logger.Info($"Create proposal {proposal} through organization address {key}");
                         proposalIds.Add(proposal);
                     }
                 }
@@ -173,102 +177,122 @@ namespace AElf.Automation.ProposalTest
         private void ApproveProposal()
         {
             Logger.Info("Approve proposal: ");
-            var proposalApproveList =
-                new Dictionary<KeyValuePair<Address, long>, Dictionary<string, Dictionary<string, VoterInfo>>>();
-            ReleaseProposalList = new List<string>();
-            VoterInfos = new List<VoterInfo>();
+            ProposalApproveList = new Dictionary<Hash, List<ApproveInfo>>();
+            ReleaseProposalList = new List<Hash>();
 
             foreach (var proposal in ProposalList)
             {
-                var approveTxIds = new Dictionary<string, Dictionary<string, VoterInfo>>();
+                var organization = proposal.Key;
+                var info = Referendum.GetOrganization(organization);
+                var approveCount = info.ProposalReleaseThreshold.MinimalApprovalThreshold;
+                var abstentionCount = info.ProposalReleaseThreshold.MaximalAbstentionThreshold;
+                var rejectionCount = info.ProposalReleaseThreshold.MaximalRejectionThreshold;
+
                 foreach (var proposalId in proposal.Value)
                 {
-                    var txInfoList = new Dictionary<string, VoterInfo>();
+                    var approveTotal = 0;
+                    var rejectTotal = 0;
+                    var approveTester = new List<string>();
+                    var voterInfos = new List<ApproveInfo>();
                     foreach (var tester in Tester)
                     {
-                        var total = 0;
-                        var rd = GenerateRandomNumber(1, 1000);
+                        var rd = GenerateRandomNumber(100, (int) approveCount);
                         Referendum.SetAccount(tester);
-                        var txId = Referendum.ExecuteMethodWithTxId(ReferendumMethod.Approve, new ApproveInput
-                        {
-                            ProposalId = HashHelper.HexStringToHash(proposalId),
-                            Quantity = rd
-                        });
-                        var voterInfo = new VoterInfo(tester, rd, proposalId);
-                        VoterInfos.Add(voterInfo);
-                        txInfoList.Add(txId, voterInfo);
-                        total += rd;
-                        if (total >= proposal.Key.Value)
-                            break;
+                        var beforeBalance = Token.GetUserBalance(tester, TokenSymbol);
+                        var fee = Token.ApproveToken(tester, Referendum.ContractAddress, rd, TokenSymbol)
+                            .GetDefaultTransactionFee();
+                        var transaction = Referendum.Approve(proposalId, tester);
+                        var voteFee = transaction.GetDefaultTransactionFee();
+                        var balance = Token.GetUserBalance(tester, TokenSymbol);
+                        balance.ShouldBe(beforeBalance - rd - voteFee - fee);
+
+                        var approveInfo = new ApproveInfo(nameof(ReferendumMethod.Approve), tester, proposalId, rd);
+                        voterInfos.Add(approveInfo);
+                        approveTotal += rd;
+                        approveTester.Add(tester);
+                        if (approveTotal >= approveCount) break;
                     }
 
-                    approveTxIds.Add(proposalId, txInfoList);
-                }
+                    var otherVoter = Tester.Where(m => !approveTester.Contains(m)).ToList();
+                    var abrd = GenerateRandomNumber(1, (int) (abstentionCount - 1));
+                    if (otherVoter.Count == 0)
+                    {
+                        ProposalApproveList.Add(proposalId, voterInfos);
+                        continue;
+                    }
 
-                proposalApproveList.Add(proposal.Key, approveTxIds);
+                    var abstainTester = otherVoter.First();
+                    Referendum.SetAccount(abstainTester);
+                    var abBeforeBalance = Token.GetUserBalance(abstainTester, TokenSymbol);
+                    var abApproveTokenFee =
+                        Token.ApproveToken(abstainTester, Referendum.ContractAddress, abrd, TokenSymbol)
+                            .GetDefaultTransactionFee();
+                    var abTransaction = Referendum.Abstain(proposalId, abstainTester);
+                    var abVoteFee = abTransaction.GetDefaultTransactionFee();
+                    var abBalance = Token.GetUserBalance(abstainTester, TokenSymbol);
+                    abBalance.ShouldBe(abBeforeBalance - abrd - abVoteFee - abApproveTokenFee);
+
+                    var abstainInfo =
+                        new ApproveInfo(nameof(ReferendumMethod.Abstain), abstainTester, proposalId, abrd);
+                    voterInfos.Add(abstainInfo);
+                    if (otherVoter.Count == 1)
+                    {
+                        ProposalApproveList.Add(proposalId, voterInfos);
+                        continue;
+                    }
+
+                    var rejectionTesters = otherVoter.Where(r => !abstainTester.Equals(r)).ToList();
+                    foreach (var rejectionTester in rejectionTesters)
+                    {
+                        var rjrd = GenerateRandomNumber(1, (int) (rejectionCount - 1));
+                        rejectTotal += rjrd;
+                        if (rejectTotal >= rejectionCount) break;
+                        Referendum.SetAccount(rejectionTester);
+                        var rjBeforeBalance = Token.GetUserBalance(rejectionTester, TokenSymbol);
+                        var rjApproveTokenFee =
+                            Token.ApproveToken(rejectionTester, Referendum.ContractAddress, rjrd, TokenSymbol)
+                                .GetDefaultTransactionFee();
+                        var rjTransaction = Referendum.Reject(proposalId, rejectionTester);
+                        var rjVoteFee = rjTransaction.GetDefaultTransactionFee();
+
+                        var rjBalance = Token.GetUserBalance(rejectionTester, TokenSymbol);
+                        rjBalance.ShouldBe(rjBeforeBalance - rjrd - rjVoteFee - rjApproveTokenFee);
+
+                        var rejectionInfo = new ApproveInfo(nameof(ReferendumMethod.Reject), rejectionTester,
+                            proposalId,
+                            rjrd);
+                        voterInfos.Add(rejectionInfo);
+                    }
+
+                    ProposalApproveList.Add(proposalId, voterInfos);
+                }
             }
 
-            foreach (var (key, value) in proposalApproveList)
-            foreach (var proposalApprove in value)
+            foreach (var (key, value) in ProposalApproveList)
             {
-                long approveMinedCount = 0;
-                foreach (var txInfo in proposalApprove.Value)
-                {
-                    var checkTime = 5;
-                    var result = Referendum.NodeManager.CheckTransactionResult(txInfo.Key);
-                    var status = result.Status.ConvertTransactionResultStatus();
-                    while (status == TransactionResultStatus.NotExisted && checkTime > 0)
-                    {
-                        checkTime--;
-                        Thread.Sleep(2000);
-                    }
-
-                    if (status != TransactionResultStatus.Mined)
-                    {
-                        Logger.Error("Approve proposal Failed.");
-                    }
-                    else
-                    {
-                        approveMinedCount += txInfo.Value.Quantity;
-                        var balance = Token.GetUserBalance(txInfo.Value.Voter);
-                        Logger.Info(
-                            $"{txInfo.Value.Voter} approve proposal {proposalApprove.Key} successful,\n {NativeToken} balance is {balance}\n vote amount is {txInfo.Value.Quantity}");
-                    }
-                }
-
-                var expectedCount = key.Value;
-                if (approveMinedCount >= expectedCount) ReleaseProposalList.Add(proposalApprove.Key);
+                var proposalStatue = Referendum.CheckProposal(key);
+                proposalStatue.ToBeReleased.ShouldBeTrue();
             }
         }
 
         private void ReleaseProposal()
         {
             Logger.Info("Release proposal: ");
-            var releaseTxInfos = new Dictionary<string, string>();
-            ReleaseMinedProposal = new List<string>();
-
-            foreach (var proposalId in ReleaseProposalList)
+            foreach (var (key, value) in ProposalList)
             {
-                Referendum.SetAccount(InitAccount);
-                var txId = Referendum.ExecuteMethodWithTxId(ReferendumMethod.Release,
-                    HashHelper.HexStringToHash(proposalId));
-                releaseTxInfos.Add(proposalId, txId);
-            }
-
-            foreach (var txInfo in releaseTxInfos)
-            {
-                var checkTime = 5;
-                var result = Referendum.NodeManager.CheckTransactionResult(txInfo.Value);
-                var status = result.Status.ConvertTransactionResultStatus();
-                while (status == TransactionResultStatus.NotExisted && checkTime > 0)
+                var sender = Referendum.GetOrganization(key).ProposerWhiteList.Proposers.First();
+                Referendum.SetAccount(sender.GetFormatted());
+                foreach (var proposalId in value)
                 {
-                    checkTime--;
-                    Thread.Sleep(2000);
+                    var toBeReleased = Referendum.CheckProposal(proposalId).ToBeReleased;
+                    if (!toBeReleased) continue;
+                    var balance = Token.GetUserBalance(key.GetFormatted(), Symbol);
+                    var result = Referendum.ExecuteMethodWithResult(ReferendumMethod.Release,
+                        proposalId);
+                    result.Status.ConvertTransactionResultStatus().ShouldBe(TransactionResultStatus.Mined);
+                    var newBalance = Token.GetUserBalance(key.GetFormatted(), Symbol);
+                    newBalance.ShouldBe(balance - 100);
                 }
-
-                if (status != TransactionResultStatus.Mined) Logger.Error("Release proposal Failed.");
-
-                ReleaseMinedProposal.Add(txInfo.Key);
             }
         }
 
@@ -276,98 +300,61 @@ namespace AElf.Automation.ProposalTest
         {
             Logger.Info("Reclaim token: ");
 
-            var oldBalance = new Dictionary<string, long>();
-            var newBalance = new Dictionary<string, long>();
-            foreach (var voter in VoterInfos)
+            foreach (var (key, value) in ProposalApproveList)
+            foreach (var voterInfo in value)
             {
-                var balance = Token.GetUserBalance(voter.Voter, NativeToken);
-                if (oldBalance.ContainsKey(voter.Voter)) continue;
-                oldBalance.Add(voter.Voter, balance);
-                Logger.Info($"{voter.Voter} {NativeToken} reclaim token balance is {balance}");
-            }
+                Referendum.SetAccount(voterInfo.Account);
+                var balance = Token.GetUserBalance(voterInfo.Account, TokenSymbol);
+                Logger.Info(
+                    $"Before reclaim vote token the account {voterInfo.Account} balance is {balance}, reclaim token is {voterInfo.Amount}");
 
-            var txInfos = new Dictionary<string, string>();
-
-            foreach (var voter in VoterInfos)
-            {
-                if (!ReleaseMinedProposal.Contains(voter.ProposalId)) continue;
-                Referendum.SetAccount(voter.Voter);
-                var txId = Referendum.ExecuteMethodWithTxId(ReferendumMethod.ReclaimVoteToken,
-                    HashHelper.HexStringToHash(voter.ProposalId));
-                txInfos.Add(txId, voter.Voter);
-            }
-
-            foreach (var txInfo in txInfos)
-            {
-                var checkTime = 5;
-                var result = Referendum.NodeManager.CheckTransactionResult(txInfo.Key);
+                var result = Referendum.ExecuteMethodWithResult(ReferendumMethod.ReclaimVoteToken, voterInfo.Proposal);
                 var status = result.Status.ConvertTransactionResultStatus();
-                while (status == TransactionResultStatus.NotExisted && checkTime > 0)
-                {
-                    checkTime--;
-                    Thread.Sleep(2000);
-                }
-
                 if (status != TransactionResultStatus.Mined) Logger.Error("Reclaim token failed");
+                var reclaimFee = result.GetDefaultTransactionFee();
+                var newBalance = Token.GetUserBalance(voterInfo.Account, TokenSymbol);
+                ;
+                newBalance.ShouldBe(balance + voterInfo.Amount - reclaimFee);
+                Logger.Info(
+                    $"After reclaim vote token the account {voterInfo.Account} balance is {newBalance},reclaim fee is {reclaimFee}");
             }
         }
 
         private void CheckTheBalance()
         {
             Logger.Info("After Referendum test, check the balance of organization address:");
-            foreach (var organization in OrganizationList)
+            foreach (var balanceInfo in BalanceInfo)
             {
-                var balance = Token.GetUserBalance(organization.Key.GetFormatted(), Symbol);
-                Logger.Info($"{organization.Key} {Symbol} balance is {balance}");
+                var balance = Token.GetUserBalance(balanceInfo.Key.GetFormatted(), Symbol);
+                balance.ShouldBe(balanceInfo.Value);
+                Logger.Info($"{balanceInfo.Key} {Symbol} balance is {balance}");
             }
 
-            Logger.Info("After Referendum reclaim, check the balance of tester:");
+            Logger.Info("After Referendum test, check the balance of tester:");
             foreach (var tester in Tester)
             {
-                var balance = Token.GetUserBalance(tester, NativeToken);
-                Logger.Info($"{tester} {NativeToken} balance is {balance}");
+                var balance = Token.GetUserBalance(tester, TokenSymbol);
+                Logger.Info($"{tester} {TokenSymbol} balance is {balance}");
             }
         }
+
 
         private void TransferToVirtualAccount()
         {
+            BalanceInfo = new Dictionary<Address, long>();
             foreach (var organization in OrganizationList)
             {
-                var balance = Token.GetUserBalance(organization.Key.GetFormatted(), Symbol);
-                if (balance > 10_00000000) continue;
-                Token.SetAccount(InitAccount);
-                Token.ExecuteMethodWithResult(TokenMethod.Transfer, new TransferInput
+                var balance = Token.GetUserBalance(organization.GetFormatted(), Symbol);
+                if (balance >= 1000_00000000)
                 {
-                    Symbol = Symbol,
-                    To = organization.Key,
-                    Amount = 100_0000000,
-                    Memo = "Transfer to organization address"
-                });
-
-                balance = Token.GetUserBalance(organization.Key.GetFormatted(), Symbol);
-                Logger.Info($"{organization.Key} {Symbol} balance is {balance}");
-            }
-        }
-
-        private void TransferToVoter()
-        {
-            foreach (var tester in Tester)
-            {
-                var balance = Token.GetUserBalance(tester);
-                if (balance < 10000)
-                {
-                    Token.ExecuteMethodWithResult(TokenMethod.Transfer, new TransferInput
-                    {
-                        Symbol = NativeToken,
-                        To = AddressHelper.Base58StringToAddress(tester),
-                        Amount = 20000,
-                        Memo = "Transfer to organization address"
-                    });
-
-                    balance = Token.GetUserBalance(tester);
+                    BalanceInfo.Add(organization, balance);
+                    continue;
                 }
 
-                Logger.Info($"{tester} {NativeToken} token balance is {balance}");
+                Token.TransferBalance(InitAccount, organization.GetFormatted(), 1000_00000000, Symbol);
+                balance = Token.GetUserBalance(organization.GetFormatted(), Symbol);
+                BalanceInfo.Add(organization, balance);
+                Logger.Info($"{organization} {Symbol} token balance is {balance}");
             }
         }
     }

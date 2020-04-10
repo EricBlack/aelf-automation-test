@@ -1,15 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using AElf.Contracts.MultiToken;
-using AElf.Types;
 using AElfChain.Common;
 using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
 using AElfChain.Common.Helpers;
-using AElfChain.Common.Utils;
-using AElfChain.SDK.Models;
 using log4net;
 using Volo.Abp.Threading;
 
@@ -18,10 +15,10 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
     public class BaseScenario
     {
         protected static readonly ILog Logger = Log4NetHelper.GetLogger();
+
+        protected DateTime UpdateEndpointTime = DateTime.Now;
         protected List<string> AllTesters { get; set; }
         protected List<Node> AllNodes { get; set; }
-        
-        protected DateTime UpdateEndpointTime = DateTime.Now;
         protected static string NativeToken { get; set; }
         protected static ContractServices Services { get; set; }
 
@@ -47,7 +44,6 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             bool interrupted = false)
         {
             foreach (var action in actions)
-            {
                 try
                 {
                     action.Invoke();
@@ -58,7 +54,6 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                     if (interrupted)
                         break;
                 }
-            }
 
             if (sleepSeconds != 0)
                 Thread.Sleep(1000 * sleepSeconds);
@@ -68,7 +63,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
         {
             var timeSpan = DateTime.Now - UpdateEndpointTime;
             if (timeSpan.Minutes < 1) return;
-            
+
             Console.WriteLine();
             UpdateEndpointTime = DateTime.Now;
             Services.UpdateRandomEndpoint();
@@ -98,7 +93,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 if (checkTimes == 120)
                     break;
 
-                var newHeight = AsyncHelper.RunSync(Services.NodeManager.ApiService.GetBlockHeightAsync);
+                var newHeight = AsyncHelper.RunSync(Services.NodeManager.ApiClient.GetBlockHeightAsync);
                 if (newHeight == height)
                 {
                     checkTimes++;
@@ -129,7 +124,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 token.TransferBalance(bp.Account, tester, transferAmount);
             }
         }
-        
+
         protected void CollectPartBpTokensToBp0()
         {
             Logger.Info("Transfer part bps token to first bp for testing.");
@@ -147,7 +142,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                     Amount = balance / 2,
                     Symbol = NodeOption.NativeTokenSymbol,
                     To = bp0.Account.ConvertAddress(),
-                    Memo = $"Collect part tokens-{Guid.NewGuid()}"
+                    Memo = $"Collect-{Guid.NewGuid()}"
                 });
             }
 
@@ -156,13 +151,13 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
 
         protected void InitializeScenario()
         {
-            var testerCount = ConfigInfoHelper.Config.UserCount;
+            var testerCount = ScenarioConfig.ReadInformation.UserCount;
             var envCheck = EnvCheck.GetDefaultEnvCheck();
             AllTesters = envCheck.GenerateOrGetTestUsers(testerCount);
             if (Services == null)
             {
-                var oldEnv = OldEnvCheck.GetDefaultEnvCheck();
-                Services = oldEnv.GetContractServices();
+                var envPreparation = EnvPreparation.GetDefaultEnvCheck();
+                Services = envPreparation.GetContractServices();
             }
 
             var configInfo = NodeInfoHelper.Config;
@@ -179,10 +174,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
         protected void PrintTesters(string name, List<string> testers)
         {
             Logger.Info($"Scenario: {name}");
-            foreach (var tester in testers)
-            {
-                Logger.Info(tester);
-            }
+            foreach (var tester in testers) Logger.Info(tester);
         }
     }
 }

@@ -8,13 +8,13 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using AElf.Client.Service;
 using AElf.Contracts.MultiToken;
 using AElfChain.Common;
 using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElfChain.Common.Utils;
-using AElfChain.SDK;
 using log4net;
 using Volo.Abp.Threading;
 
@@ -50,7 +50,7 @@ namespace AElf.Automation.RpcPerformance
             NodeManager = new NodeManager(BaseUrl, KeyStorePath);
 
             //Connect
-            AsyncHelper.RunSync(ApiService.GetChainStatusAsync);
+            AsyncHelper.RunSync(ApiClient.GetChainStatusAsync);
             //New
             GetTestAccounts(userCount);
             //Unlock Account
@@ -64,10 +64,11 @@ namespace AElf.Automation.RpcPerformance
 
             //Transfer token for approve
             var bps = NodeInfoHelper.Config.Nodes.Select(o => o.Account);
-            TokenMonitor.TransferTokenForTest(bps.ToList());
+            var enumerable = bps as string[] ?? bps.ToArray();
+            TokenMonitor.TransferTokenForTest(enumerable.ToList());
 
             //Set select limit transaction
-            var setAccount = bps.First();
+            var setAccount = enumerable.First();
             var transactionExecuteLimit = new TransactionExecuteLimit(NodeManager, setAccount);
             if (transactionExecuteLimit.WhetherEnableTransactionLimit())
                 transactionExecuteLimit.SetExecutionSelectTransactionLimit();
@@ -81,6 +82,10 @@ namespace AElf.Automation.RpcPerformance
         }
 
         public void SideChainDeployContractsWithAuthority()
+        {
+        }
+
+        public void SideChainDeployContractsWithCreator()
         {
         }
 
@@ -98,9 +103,9 @@ namespace AElf.Automation.RpcPerformance
                 var contract = new ContractInfo(AccountList[i].Account, SystemTokenAddress);
                 var account = contract.Owner;
                 var contractPath = contract.ContractAddress;
-                var symbol = $"{CommonHelper.RandomString(8, false)}";
+                var symbol = TesterTokenMonitor.GenerateNotExistTokenSymbol(NodeManager);
                 contract.Symbol = symbol;
-                if (i == 0) //添加默认ELF转账组
+                if (i == 0) //add default ELF transfer group
                 {
                     contract.Symbol = primaryToken;
                     ContractList.Add(contract);
@@ -147,8 +152,8 @@ namespace AElf.Automation.RpcPerformance
             }
 
             Monitor.CheckTransactionsStatus(TxIdList);
-            
-            //随机检查用户token
+
+            //check user token randomly
             foreach (var contract in ContractList)
             {
                 var contractPath = contract.ContractAddress;
@@ -161,14 +166,12 @@ namespace AElf.Automation.RpcPerformance
                     if (rd != 5) continue;
                     //verify token
                     var balance = token.GetUserBalance(user.Account, symbol);
-                    if(balance == amount)
+                    if (balance == amount)
                         Logger.Info($"Issue token {symbol} to '{user.Account}' with amount {amount} success.");
-                    else if(balance == 0)
+                    else if (balance == 0)
                         Logger.Warn($"User '{user.Account}' without any {symbol} token.");
                     else
-                    {
                         Logger.Error($"User {user.Account} {symbol} token balance not correct.");
-                    }
                 }
             }
         }
@@ -228,19 +231,19 @@ namespace AElf.Automation.RpcPerformance
 
         public void ExecuteContinuousRoundsTransactionsTask(bool useTxs = false)
         {
-            var randomTransactionOption = ConfigInfoHelper.Config.RandomEndpointOption;
+            var randomTransactionOption = RpcConfig.ReadInformation.RandomEndpointOption;
             //add transaction performance check process
             var testers = AccountList.Select(o => o.Account).ToList();
             var cts = new CancellationTokenSource();
             var token = cts.Token;
             var taskList = new List<Task>
             {
-                Task.Run(() => Summary.ContinuousCheckTransactionPerformance(token)),
-                Task.Run(() => TokenMonitor.ExecuteTokenCheckTask(testers, token)),
+                Task.Run(() => Summary.ContinuousCheckTransactionPerformance(token), token),
+                Task.Run(() => TokenMonitor.ExecuteTokenCheckTask(testers, token), token),
                 Task.Run(() =>
                 {
                     Logger.Info("Begin generate multi requests.");
-                    var enableRandom = ConfigInfoHelper.Config.EnableRandomTransaction;
+                    var enableRandom = RpcConfig.ReadInformation.EnableRandomTransaction;
 
                     try
                     {
@@ -259,7 +262,7 @@ namespace AElf.Automation.RpcPerformance
                                     for (var i = 0; i < ThreadCount; i++)
                                     {
                                         var j = i;
-                                        txsTasks.Add(Task.Run(() => ExecuteBatchTransactionTask(j, exeTimes)));
+                                        txsTasks.Add(Task.Run(() => ExecuteBatchTransactionTask(j, exeTimes), token));
                                     }
 
                                     Task.WaitAll(txsTasks.ToArray<Task>());
@@ -270,14 +273,12 @@ namespace AElf.Automation.RpcPerformance
                                     for (var i = 0; i < ThreadCount; i++)
                                     {
                                         var j = i;
-                                        //Generate transaction requests
                                         GenerateRawTransactionQueue(j, exeTimes);
-                                        //Send  transaction requests
                                         Logger.Info(
                                             $"Begin execute group {j + 1} transactions with {ThreadCount} threads.");
                                         var txTasks = new List<Task>();
                                         for (var k = 0; k < ThreadCount; k++)
-                                            txTasks.Add(Task.Run(() => ExecuteAloneTransactionTask(j)));
+                                            txTasks.Add(Task.Run(() => ExecuteAloneTransactionTask(j), token));
 
                                         Task.WaitAll(txTasks.ToArray<Task>());
                                     }
@@ -307,9 +308,9 @@ namespace AElf.Automation.RpcPerformance
                     {
                         Logger.Error(e.Message);
                         Logger.Error("Cancel all tasks due to transaction execution exception.");
-                        cts.Cancel(); //取消所有任务执行
+                        cts.Cancel(); //cancel all tasks
                     }
-                })
+                }, token)
             };
 
             Task.WaitAll(taskList.ToArray<Task>());
@@ -355,8 +356,8 @@ namespace AElf.Automation.RpcPerformance
 
         private void UpdateRandomEndpoint()
         {
-            var randomTransactionOption = ConfigInfoHelper.Config.RandomEndpointOption;
-            var maxLimit = ConfigInfoHelper.Config.SentTxLimit;
+            var randomTransactionOption = RpcConfig.ReadInformation.RandomEndpointOption;
+            var maxLimit = RpcConfig.ReadInformation.SentTxLimit;
             if (!randomTransactionOption.EnableRandom) return;
             var exceptionTimes = 8;
             while (true)
@@ -368,10 +369,10 @@ namespace AElf.Automation.RpcPerformance
                 try
                 {
                     var transactionPoolCount =
-                        AsyncHelper.RunSync(NodeManager.ApiService.GetTransactionPoolStatusAsync).Validated;
+                        AsyncHelper.RunSync(NodeManager.ApiClient.GetTransactionPoolStatusAsync).Validated;
                     if (transactionPoolCount > maxLimit)
                     {
-                        Thread.Sleep(1000);
+                        Thread.Sleep(50);
                         Logger.Warn(
                             $"TxHub current transaction count:{transactionPoolCount}, current test limit number: {maxLimit}");
                         continue;
@@ -433,7 +434,7 @@ namespace AElf.Automation.RpcPerformance
             var result = Monitor.CheckTransactionPoolStatus(LimitTransaction);
             if (!result)
             {
-                Logger.Warn($"Transaction pool transactions over limited, canceled this round execution.");
+                Logger.Warn("Transaction pool transactions over limited, canceled this round execution.");
                 return;
             }
 
@@ -480,9 +481,9 @@ namespace AElf.Automation.RpcPerformance
                 if (!GenerateTransactionQueue.TryDequeue(out var rawTransaction))
                     break;
 
-                var transactionOutput = AsyncHelper.RunSync(() => ApiService.SendTransactionAsync(rawTransaction));
+                var transactionId = NodeManager.SendTransaction(rawTransaction);
                 Logger.Info("Group={0}, TaskLeft={1}, TxId: {2}", group + 1,
-                    GenerateTransactionQueue.Count, transactionOutput.TransactionId);
+                    GenerateTransactionQueue.Count, transactionId);
                 Thread.Sleep(10);
             }
         }
@@ -532,7 +533,7 @@ namespace AElf.Automation.RpcPerformance
             var result = Monitor.CheckTransactionPoolStatus(LimitTransaction);
             if (!result)
             {
-                Logger.Warn($"Transaction pool transactions over limited, canceled this round execution.");
+                Logger.Warn("Transaction pool transactions over limited, canceled this round execution.");
                 return;
             }
 
@@ -568,7 +569,7 @@ namespace AElf.Automation.RpcPerformance
         #region Public Property
 
         public INodeManager NodeManager { get; private set; }
-        public IApiService ApiService => NodeManager.ApiService;
+        public AElfClient ApiClient => NodeManager.ApiClient;
         private ExecutionSummary Summary { get; set; }
         private NodeStatusMonitor Monitor { get; set; }
         private TesterTokenMonitor TokenMonitor { get; set; }

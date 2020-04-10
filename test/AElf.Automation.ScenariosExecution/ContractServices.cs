@@ -1,16 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Acs0;
+using AElf.Types;
+using AElfChain.Common;
 using AElfChain.Common.Contracts;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElf.Automation.ScenariosExecution.Scenarios;
-using AElf.Contracts.TestContract.BasicFunction;
-using AElf.Types;
-using AElfChain.Common;
 using log4net;
-using Volo.Abp;
 
 namespace AElf.Automation.ScenariosExecution
 {
@@ -29,13 +25,25 @@ namespace AElf.Automation.ScenariosExecution
             GetAllContractServices();
         }
 
+        public GenesisContract GenesisService { get; set; }
+        public TokenContract TokenService { get; set; }
+        public TreasuryContract TreasuryService { get; set; }
+        public TokenConverterContract TokenConverterService { get; set; }
+        public VoteContract VoteService { get; set; }
+        public ProfitContract ProfitService { get; set; }
+        public ElectionContract ElectionService { get; set; }
+        public ConsensusContract ConsensusService { get; set; }
+        public string CallAddress { get; set; }
+        public Address CallAccount { get; set; }
+        public static List<Node> CurrentBpNodes { get; set; }
+
         public void UpdateRandomEndpoint()
         {
             while (true)
             {
                 var nodes = NodeInfoHelper.Config.Nodes;
                 var randomId = CommonHelper.GenerateRandomNumber(0, nodes.Count);
-                if(nodes[randomId].Endpoint == NodeManager.GetApiUrl()) continue;
+                if (nodes[randomId].Endpoint == NodeManager.GetApiUrl()) continue;
 
                 var updateUrl = nodes[randomId].Endpoint;
                 NodeManager.UpdateApiUrl(updateUrl);
@@ -48,19 +56,6 @@ namespace AElf.Automation.ScenariosExecution
             return MemberwiseClone() as ContractServices;
         }
 
-        public GenesisContract GenesisService { get; set; }
-        public TokenContract TokenService { get; set; }
-        public TreasuryContract TreasuryService { get; set; }
-        public TokenConverterContract TokenConverterService { get; set; }
-        public VoteContract VoteService { get; set; }
-        public ProfitContract ProfitService { get; set; }
-        public ElectionContract ElectionService { get; set; }
-        public ConsensusContract ConsensusService { get; set; }
-        public string CallAddress { get; set; }
-        public Address CallAccount { get; set; }
-
-        public static List<Node> CurrentBpNodes { get; set; }
-
         private void GetAllContractServices()
         {
             GenesisService = GenesisContract.GetGenesisContract(NodeManager, CallAddress);
@@ -69,8 +64,8 @@ namespace AElf.Automation.ScenariosExecution
             ConsensusService = GenesisService.GetConsensusContract();
 
             CurrentBpNodes = GetCurrentBpNodes();
-            var specifyEndpoint = ConfigInfoHelper.Config.SpecifyEndpoint;
-            if (!specifyEndpoint.Enable) //随机选择bp执行
+            var specifyEndpoint = ScenarioConfig.ReadInformation.SpecifyEndpoint;
+            if (!specifyEndpoint.Enable) //check whether select random endpoint to run
             {
                 var rd = new Random(DateTime.Now.Millisecond);
                 NodeManager.UpdateApiUrl(CurrentBpNodes[rd.Next(0, CurrentBpNodes.Count - 1)].Endpoint);
@@ -79,21 +74,20 @@ namespace AElf.Automation.ScenariosExecution
             //Treasury contract
             TreasuryService = GenesisService.GetTreasuryContract();
 
-            //TokenService contract
+            //Token contract
             TokenService = GenesisService.GetTokenContract();
 
-            //ProfitService contract
+            //Profit contract
             ProfitService = GenesisService.GetProfitContract();
 
-            //VoteService contract
+            //Vote contract
             VoteService = GenesisService.GetVoteContract();
 
-            //ElectionService contract
+            //Election contract
             ElectionService = GenesisService.GetElectionContract();
 
             //TokenConverter contract
             TokenConverterService = GenesisService.GetTokenConverterContract();
-
         }
 
         private List<Node> GetCurrentBpNodes()

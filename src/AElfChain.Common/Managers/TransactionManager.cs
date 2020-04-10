@@ -2,11 +2,10 @@
 using System.Linq;
 using System.Threading;
 using AElf;
-using AElfChain.Common.Helpers;
 using AElf.Cryptography;
 using AElf.Types;
-using AElfChain.Common.Utils;
-using AElfChain.SDK;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
 using Google.Protobuf;
 using log4net;
 using Volo.Abp.Threading;
@@ -100,15 +99,15 @@ namespace AElfChain.Common.Managers
         private static (long, string) GetBlockReference(string baseUrl, int requestTimes = 4)
         {
             while (true)
-            {
                 try
                 {
-                    var client = AElfChainClient.GetClient(baseUrl);
+                    var client = AElfClientExtension.GetClient(baseUrl);
                     var chainStatus = AsyncHelper.RunSync(client.GetChainStatusAsync);
                     if (chainStatus.LongestChainHeight - chainStatus.LastIrreversibleBlockHeight > 400)
                     {
                         Thread.Sleep(5000);
-                        $"Warning: chain longest chain and lib interval {chainStatus.LastIrreversibleBlockHeight}=>{chainStatus.LongestChainHeight} over 400.".WriteWarningLine();
+                        $"Warning: chain longest chain and lib interval {chainStatus.LastIrreversibleBlockHeight}=>{chainStatus.LongestChainHeight} over 400."
+                            .WriteWarningLine();
                         continue;
                     }
 
@@ -121,7 +120,6 @@ namespace AElfChain.Common.Managers
                     if (requestTimes < 0) throw new Exception("Get chain status got failed exception.");
                     Thread.Sleep(500);
                 }
-            }
         }
     }
 }

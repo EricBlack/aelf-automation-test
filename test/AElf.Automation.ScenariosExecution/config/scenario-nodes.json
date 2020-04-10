@@ -1,0 +1,77 @@
+{
+    "TestCases": [
+        {
+            "case_name": "TokenScenario",
+            "enable": false,
+            "time_interval": 3
+        },
+        {
+            "case_name": "ContractScenario",
+            "enable": false,
+            "time_interval": 30
+        },
+        {
+            "case_name": "ResourceScenario",
+            "enable": false,
+            "time_interval": 3
+        },
+        {
+            "case_name": "NodeScenario",
+            "enable": true,
+            "time_interval": 30
+        },
+        {
+            "case_name": "UserScenario",
+            "enable": true,
+            "time_interval": 10
+        },
+        {
+            "case_name": "ExceptionScenario",
+            "enable": false,
+            "time_interval": 30
+        },
+        {
+            "case_name": "PerformanceScenario",
+            "enable": false,
+            "time_interval": 10
+        },
+        {
+            "case_name": "DeleteValueScenario",
+            "enable": false,
+            "time_interval": 10
+        },
+        {
+            "case_name": "Acs8Scenario",
+            "enable": false,
+            "time_interval": 10
+        },
+        {
+            "case_name": "MassRequestScenario",
+            "enable": true,
+            "time_interval": 100
+        }
+    ],
+    "ContractsInfo": {
+        "AutoUpdate": false,
+        "Contracts": [
+            {
+                "name": "BasicFunction",
+                "address": "2gaQh4uxg6tzyH1ADLoDxvHA14FMpzEiMqsQ6sDG5iHT8cmjp0",
+                "code_hash": "",
+                "owner": ""
+            },
+            {
+                "name": "Performance",
+                "address": "",
+                "code_hash": "",
+                "owner": ""
+            }
+        ]
+    },
+    "UserCount": 120,
+    "Timeout": 300,
+    "SpecifyEndpoint": {
+        "enable": false,
+        "service_url": "http://192.168.197.40:8000"
+    }
+}

@@ -1,9 +1,8 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using AElf;
-using AElfChain.Common.Managers;
 using AElf.Contracts.Consensus.AEDPoS;
-using AElf.Types;
+using AElfChain.Common.Managers;
 using Google.Protobuf.WellKnownTypes;
 
 namespace AElfChain.Common.Contracts
@@ -63,7 +62,7 @@ namespace AElfChain.Common.Contracts
 
         public List<string> GetInitialMinersPubkey()
         {
-            var roundInfo = CallViewMethod<Round>(ConsensusMethod.GetRoundInformation, new SInt64Value
+            var roundInfo = CallViewMethod<Round>(ConsensusMethod.GetRoundInformation, new Int64Value
             {
                 Value = 1
             });

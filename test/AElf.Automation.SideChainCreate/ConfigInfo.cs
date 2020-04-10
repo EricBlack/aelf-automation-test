@@ -15,10 +15,9 @@ namespace AElf.Automation.SideChainCreate
     public class EnvironmentInfo
     {
         [JsonProperty("Environment")] public string Environment { get; set; }
-        [JsonProperty("InitAccount")] public string InitAccount { get; set; }
-        [JsonProperty("Url")] public string Url { get; set; }
+        [JsonProperty("Creator")] public string Creator { get; set; }
+        [JsonProperty("ConfigFile")] public string ConfigFile { get; set; }
         [JsonProperty("Password")] public string Password { get; set; }
-        [JsonProperty("NativeSymbol")] public string NativeSymbol { get; set; }
     }
 
     public class SideChainInfo

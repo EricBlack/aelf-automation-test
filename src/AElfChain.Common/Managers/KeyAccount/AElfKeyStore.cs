@@ -4,11 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AElfChain.Common.Helpers;
 using AElf.Cryptography;
 using AElf.Cryptography.ECDSA;
 using AElf.Cryptography.Exceptions;
 using AElf.Types;
+using AElfChain.Common.Helpers;
 using log4net;
 using Nethereum.KeyStore;
 using Nethereum.KeyStore.Crypto;
@@ -95,8 +95,19 @@ namespace AElfChain.Common.Managers
         {
             var dir = CreateKeystoreDirectory();
             var files = dir.GetFiles("*" + KeyFileExtension);
+            var accounts = new List<string>();
+            foreach (var file in files)
+            {
+                if (file.Length == 0)
+                {
+                    File.Delete(file.FullName); //delete empty account files
+                    continue;
+                }
 
-            return await Task.Run(() => files.Select(f => Path.GetFileNameWithoutExtension(f.Name)).ToList());
+                accounts.Add(Path.GetFileNameWithoutExtension(file.Name));
+            }
+
+            return await Task.FromResult(accounts);
         }
 
         public static AElfKeyStore GetKeyStore(string dataDirectory = "")
@@ -181,26 +192,24 @@ namespace AElfChain.Common.Managers
             var fullPath = GetKeyFileFullPath(address.GetFormatted());
             //save cache
             await CacheAccount.WriteCache(address.GetFormatted(), keyPair.PrivateKey);
-            
+
             await Task.Run(() =>
             {
-                using (var writer = File.CreateText(fullPath))
+                using var writer = File.CreateText(fullPath);
+                string scryptResult;
+                while (true)
                 {
-                    string scryptResult;
-                    while (true)
-                    {
-                        scryptResult = _keyStoreService.EncryptAndGenerateDefaultKeyStoreAsJson(password,
-                            keyPair.PrivateKey,
-                            address.GetFormatted());
-                        if (!scryptResult.IsNullOrWhiteSpace())
-                            break;
+                    scryptResult = _keyStoreService.EncryptAndGenerateDefaultKeyStoreAsJson(password,
+                        keyPair.PrivateKey,
+                        address.GetFormatted());
+                    if (!scryptResult.IsNullOrWhiteSpace())
+                        break;
 
-                        Logger.Error("Empty account");
-                    }
-
-                    writer.Write(scryptResult);
-                    writer.Flush();
+                    Logger.Error("Empty account");
                 }
+
+                writer.Write(scryptResult);
+                writer.Flush();
             });
 
             return true;

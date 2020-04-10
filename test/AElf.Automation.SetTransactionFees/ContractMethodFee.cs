@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using Acs1;
-using AElfChain.Common.ContractSerializer;
+using AElf.Types;
+using AElfChain.Common.Contracts.Serializer;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElf.Types;
 using Google.Protobuf.WellKnownTypes;
 using log4net;
 using Newtonsoft.Json;
@@ -16,7 +16,7 @@ namespace AElf.Automation.SetTransactionFees
     {
         private static readonly ILog Logger = Log4NetHelper.GetLogger();
 
-        private readonly List<string> NoFeeMethods = new List<string>
+        private readonly List<string> _noFeeMethods = new List<string>
         {
             "InitialAElfConsensusContract",
             "FirstRound",
@@ -52,7 +52,7 @@ namespace AElf.Automation.SetTransactionFees
         {
             foreach (var method in Contract.Methods)
             {
-                if (NoFeeMethods.Contains(method.Name))
+                if (_noFeeMethods.Contains(method.Name))
                 {
                     Logger.Info($"No need to set method fee for: {method.Name}");
                     continue;
@@ -93,6 +93,7 @@ namespace AElf.Automation.SetTransactionFees
                 //query result
                 var afterFee = QueryTransactionFee(caller, ContractAddress, method.Name);
                 Logger.Info(JsonConvert.SerializeObject(afterFee, Formatting.Indented));
+                afterFee.Fees.First().BasicFee.ShouldBe(amount);
             }
         }
 

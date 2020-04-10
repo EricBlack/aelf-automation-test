@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using AElfChain.Common;
-using AElfChain.Common.Contracts;
-using AElfChain.Common.Helpers;
 using AElf.Contracts.MultiToken;
 using AElf.Contracts.TokenConverter;
 using AElf.Types;
-using AElfChain.SDK.Models;
+using AElfChain.Common;
+using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
 using log4net;
 
 namespace AElf.Automation.ScenariosExecution.Scenarios
@@ -71,14 +71,14 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 if (existed) continue;
                 if (buyResult.Status.ConvertTransactionResultStatus() == TransactionResultStatus.Mined)
                 {
-                    var transactionFee = buyResult.TransactionFee.GetDefaultTransactionFee();
+                    var transactionFee = buyResult.GetDefaultTransactionFee();
                     var elfAfterBalance = Token.GetUserBalance(user);
                     var resAfterBalance = Token.GetUserBalance(user, resSymbol);
                     if (resBeforeBalance + amount == resAfterBalance)
                     {
                         var cost = elfBeforeBalance + transactionFee - elfAfterBalance;
                         Logger.Info(
-                            $"Buy resource {resSymbol}={amount} success. Price(ELF/{resSymbol}): {(double)cost / (double)amount:0.0000}");
+                            $"Buy resource {resSymbol}={amount} success. Price(ELF/{resSymbol}): {(double) cost / (double) amount:0.0000}");
                     }
                     else
                     {
@@ -109,14 +109,14 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 if (existed) continue;
                 if (sellResult.Status.ConvertTransactionResultStatus() == TransactionResultStatus.Mined)
                 {
-                    var transactionFee = sellResult.TransactionFee.GetDefaultTransactionFee();
+                    var transactionFee = sellResult.GetDefaultTransactionFee();
                     var elfAfterBalance = Token.GetUserBalance(user);
                     var resAfterBalance = Token.GetUserBalance(user, resSymbol);
                     if (resAfterBalance == resBeforeBalance - amount)
                     {
                         var got = elfAfterBalance + transactionFee - elfBeforeBalance;
                         Logger.Info(
-                            $"Sell resource {resSymbol}={amount} success. Price(ELF/{resSymbol}): {(double)got / (double)amount:0.0000}");
+                            $"Sell resource {resSymbol}={amount} success. Price(ELF/{resSymbol}): {(double) got / (double) amount:0.0000}");
                     }
                     else
                     {
@@ -159,25 +159,25 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 Token.ExecuteMethodWithTxId(TokenMethod.Approve, new ApproveInput
                 {
                     Spender = AddressHelper.Base58StringToAddress(TokenConverter.ContractAddress),
-                    Symbol = "RAM",
+                    Symbol = "WRITE",
                     Amount = 100_000_00000000
                 });
                 Token.ExecuteMethodWithTxId(TokenMethod.Approve, new ApproveInput
                 {
                     Spender = AddressHelper.Base58StringToAddress(TokenConverter.ContractAddress),
-                    Symbol = "CPU",
+                    Symbol = "READ",
                     Amount = 100_000_00000000
                 });
                 Token.ExecuteMethodWithTxId(TokenMethod.Approve, new ApproveInput
                 {
                     Spender = AddressHelper.Base58StringToAddress(TokenConverter.ContractAddress),
-                    Symbol = "NET",
+                    Symbol = "TRAFFIC",
                     Amount = 100_000_00000000
                 });
                 Token.ExecuteMethodWithTxId(TokenMethod.Approve, new ApproveInput
                 {
                     Spender = AddressHelper.Base58StringToAddress(TokenConverter.ContractAddress),
-                    Symbol = "STO",
+                    Symbol = "STORAGE",
                     Amount = 100_000_00000000
                 });
             }
@@ -187,7 +187,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
 
         private string GetRandomResSymbol()
         {
-            var symbols = new[] {"CPU", "RAM", "NET", "STO"};
+            var symbols = new[] {"READ", "WRITE", "STORAGE", "TRAFFIC"};
             var id = GenerateRandomNumber(0, symbols.Length - 1);
 
             return symbols[id];

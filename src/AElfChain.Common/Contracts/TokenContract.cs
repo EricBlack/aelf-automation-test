@@ -1,9 +1,10 @@
 ﻿using System;
+using AElf.Client.Dto;
+using AElf.Contracts.MultiToken;
+using AElf.Types;
+using AElfChain.Common.DtoExtension;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElf.Contracts.MultiToken;
-using AElfChain.Common.Utils;
-using AElfChain.SDK.Models;
 using Google.Protobuf.WellKnownTypes;
 
 namespace AElfChain.Common.Contracts
@@ -30,6 +31,15 @@ namespace AElfChain.Common.Contracts
         SetFeePoolAddress,
         RegisterCrossChainTokenContractAddress,
         CrossChainCreateToken,
+        UpdateCoefficientFromContract,
+        UpdateCoefficientFromSender,
+        UpdateLinerAlgorithm,
+        UpdatePowerAlgorithm,
+        ChangeFeePieceKey,
+        ValidateTokenInfoExists,
+        AdvanceResourceToken,
+        UpdateRental,
+        UpdateRentedResourceToken,
 
         //View
         GetTokenInfo,
@@ -39,7 +49,9 @@ namespace AElfChain.Common.Contracts
         IsInWhiteList,
         GetNativeTokenInfo,
         GetCrossChainTransferTokenContractAddress,
-        GetMethodFee
+        GetMethodFee,
+        GetOwningRental,
+        GetLockedAmount
     }
 
     public class TokenContract : BaseContract<TokenMethod>
@@ -65,7 +77,7 @@ namespace AElfChain.Common.Contracts
                 Symbol = NodeOption.GetTokenSymbol(symbol),
                 To = to.ConvertAddress(),
                 Amount = amount,
-                Memo = $"transfer amount {amount} - {Guid.NewGuid().ToString()}"
+                Memo = $"T-{Guid.NewGuid().ToString()}"
             });
 
             return result;
@@ -77,15 +89,33 @@ namespace AElfChain.Common.Contracts
             tester.SetAccount(from);
             var result = tester.ExecuteMethodWithResult(TokenMethod.Issue, new IssueInput
             {
-                Symbol = symbol,
+                Symbol = NodeOption.GetTokenSymbol(symbol),
                 To = to.ConvertAddress(),
                 Amount = amount,
-                Memo = $"Issue amount {Guid.NewGuid()}"
+                Memo = $"I-{Guid.NewGuid()}"
             });
 
             return result;
         }
 
+        public TransactionResultDto ApproveToken(string from, string to, long amount, string symbol = "")
+        {
+            SetAccount(from);
+            var result = ExecuteMethodWithResult(TokenMethod.Approve, new ApproveInput
+            {
+                Symbol = NodeOption.GetTokenSymbol(symbol),
+                Amount = amount,
+                Spender = to.ConvertAddress()
+            });
+
+            return result;
+        }
+
+        public TransactionResultDto CrossChainReceiveToken(string from, CrossChainReceiveTokenInput input)
+        {
+            var tester = GetNewTester(from);
+            return tester.ExecuteMethodWithResult(TokenMethod.CrossChainReceiveToken, input);
+        }
 
         public long GetUserBalance(string account, string symbol = "")
         {
@@ -94,6 +124,16 @@ namespace AElfChain.Common.Contracts
                 Owner = account.ConvertAddress(),
                 Symbol = NodeOption.GetTokenSymbol(symbol)
             }).Balance;
+        }
+
+        public long GetLockedAmount(string account, Hash lockId, string symbol = "")
+        {
+            return CallViewMethod<GetLockedAmountOutput>(TokenMethod.GetLockedAmount, new GetLockedAmountInput
+            {
+                Address = account.ConvertAddress(),
+                LockId = lockId,
+                Symbol = NodeOption.GetTokenSymbol(symbol)
+            }).Amount;
         }
 
         public long GetAllowance(string from, string to, string symbol = "")
@@ -123,6 +163,11 @@ namespace AElfChain.Common.Contracts
             {
                 Symbol = symbol
             });
+        }
+
+        public OwningRental GetOwningRental()
+        {
+            return CallViewMethod<OwningRental>(TokenMethod.GetOwningRental, new Empty());
         }
     }
 }

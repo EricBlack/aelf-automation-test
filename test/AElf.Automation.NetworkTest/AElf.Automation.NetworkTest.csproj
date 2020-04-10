@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>netcoreapp3.1</TargetFramework>
+    </PropertyGroup>
+    <ItemGroup>
+        <None Update="network.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Remove="logs\**" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\AElfChain.Common\AElfChain.Common.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+      <Compile Remove="logs\**" />
+    </ItemGroup>
+    <ItemGroup>
+      <EmbeddedResource Remove="logs\**" />
+    </ItemGroup>
+    <ItemGroup>
+      <PackageReference Include="AElf.Client" Version="0.1.4" />
+      <PackageReference Include="AElf.Types" Version="0.9.3-18347" />
+    </ItemGroup>
+
+</Project>

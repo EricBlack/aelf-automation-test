@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Acs0;
+using AElf.Contracts.MultiToken;
 using AElfChain.Common;
 using AElfChain.Common.Contracts;
-using AElfChain.Common.Helpers;
-using AElfChain.Common.Utils;
-using AElf.Contracts.MultiToken;
-using log4net;
+using AElfChain.Common.DtoExtension;
 using Shouldly;
 
 namespace AElf.Automation.ScenariosExecution.Scenarios
@@ -33,8 +30,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             {
                 NotExistedMethodAction,
                 TransferWithoutEnoughTokenAction,
-                TransferWithoutEnoughAllowanceAction,
-                UpdateContractAuthorWithoutPermissionAction
+                TransferWithoutEnoughAllowanceAction
             });
         }
 
@@ -44,7 +40,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             var executeResult = Token.ExecuteMethodWithResult(methodName, new GetBalanceInput
             {
                 Symbol = NodeOption.NativeTokenSymbol,
-                Owner = AddressUtils.Generate()
+                Owner = AddressExtension.Generate()
             });
             executeResult.Error.ShouldNotBeNull();
             Logger.Info("Execute not existed contract method failed.");
@@ -58,8 +54,8 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             {
                 Symbol = NodeOption.NativeTokenSymbol,
                 Amount = 100_000_00000000L,
-                To = AddressUtils.Generate(),
-                Memo = "Transfer without enough token test"
+                To = AddressExtension.Generate(),
+                Memo = "T without enough token"
             });
             executeResult.Error.ShouldNotBeNull();
             Logger.Info("Transfer without enough token execute failed.");
@@ -73,26 +69,12 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             {
                 Symbol = NodeOption.NativeTokenSymbol,
                 Amount = 100_000_00000000L,
-                From = AddressUtils.Generate(),
-                To = AddressUtils.Generate(),
+                From = AddressExtension.Generate(),
+                To = AddressExtension.Generate(),
                 Memo = "Transfer from test"
             });
             executeResult.Error.ShouldNotBeNull();
             Logger.Info("Transfer without enough allowance execute failed.");
-        }
-
-        private void UpdateContractAuthorWithoutPermissionAction()
-        {
-            var testUser = Testers[GenerateRandomNumber(0, 10)];
-            var tester = Genesis.GetNewTester(testUser);
-            var executeResult = tester.ExecuteMethodWithResult(GenesisMethod.ChangeContractAuthor,
-                new ChangeContractAuthorInput
-                {
-                    NewAuthor = AddressHelper.Base58StringToAddress(testUser),
-                    ContractAddress = AddressHelper.Base58StringToAddress(Token.ContractAddress)
-                });
-            executeResult.Error.ShouldNotBeNull();
-            Logger.Info("Update contract author information without permission execute failed.");
         }
     }
 }

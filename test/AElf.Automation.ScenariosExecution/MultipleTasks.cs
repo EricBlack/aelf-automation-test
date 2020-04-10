@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using AElfChain.Common.Helpers;
 using AElf.Automation.ScenariosExecution.Scenarios;
+using AElfChain.Common.Helpers;
 using FluentScheduler;
 using log4net;
 
@@ -22,7 +22,7 @@ namespace AElf.Automation.ScenariosExecution
 
         public void RunScenariosByTasks()
         {
-            var scenarios = ConfigInfoHelper.Config.TestCases.FindAll(o => o.Enable).ToList();
+            var scenarios = ScenarioConfig.ReadInformation.TestCases.FindAll(o => o.Enable).ToList();
 
             var tokenScenario = new TokenScenario();
             tokenScenario.PrepareAccountBalance();
@@ -71,6 +71,17 @@ namespace AElf.Automation.ScenariosExecution
                         TaskCollection.Add(RunContinueJobWithInterval(deleteValueScenario.RunDeleteValueScenarioJob,
                             scenario.TimeInterval));
                         break;
+                    case "Acs8Scenario":
+                        var acs8Scenario = new Acs8Scenario();
+                        TaskCollection.Add(RunContinueJobWithInterval(acs8Scenario.RunAcs8ScenarioJob,
+                            scenario.TimeInterval));
+                        break;
+                    case "MassRequestScenario":
+                        var requestScenario = new MonitorMassRequestScenario();
+                        TaskCollection.Add(RunContinueJobWithInterval(
+                            () => requestScenario.RunMassRequestScenarioJob(30),
+                            scenario.TimeInterval));
+                        break;
                 }
 
             //node status monitor
@@ -82,7 +93,7 @@ namespace AElf.Automation.ScenariosExecution
 
         public void RunScenariosByScheduler()
         {
-            var scenarios = ConfigInfoHelper.Config.TestCases.FindAll(o => o.Enable).ToList();
+            var scenarios = ScenarioConfig.ReadInformation.TestCases.FindAll(o => o.Enable).ToList();
 
             var tokenScenario = new TokenScenario();
             tokenScenario.PrepareAccountBalance();
@@ -124,6 +135,10 @@ namespace AElf.Automation.ScenariosExecution
                     case "DeleteValueScenario":
                         var deleteValueScenario = new DeleteValueScenario();
                         RegisterAction(registry, scenario, deleteValueScenario.RunDeleteValueScenarioJob);
+                        break;
+                    case "Acs8Scenario":
+                        var acs8Scenario = new Acs8Scenario();
+                        RegisterAction(registry, scenario, acs8Scenario.RunAcs8ScenarioJob);
                         break;
                 }
 

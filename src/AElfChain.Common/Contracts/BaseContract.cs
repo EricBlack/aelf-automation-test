@@ -1,15 +1,15 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading;
-using AElfChain.Common.Helpers;
-using AElfChain.Common.Managers;
+using AElf.Client.Dto;
+using AElf.Client.Service;
 using AElf.CSharp.Core;
 using AElf.Types;
-using AElfChain.Common.Utils;
-using AElfChain.SDK;
-using AElfChain.SDK.Models;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
+using AElfChain.Common.Managers;
 using Google.Protobuf;
-using Google.Protobuf.WellKnownTypes;
 using log4net;
 using Newtonsoft.Json;
 using Volo.Abp.Threading;
@@ -19,7 +19,7 @@ namespace AElfChain.Common.Contracts
     public class BaseContract<T>
     {
         /// <summary>
-        ///     部署新合约
+        ///     deploy new contract
         /// </summary>
         /// <param name="nodeManager"></param>
         /// <param name="fileName"></param>
@@ -34,7 +34,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     使用已存在合约
+        ///     Initialize existed contract
         /// </summary>
         /// <param name="nodeManager"></param>
         /// <param name="contractAddress"></param>
@@ -49,7 +49,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     获取合约Stub
+        ///     get contract stub
         /// </summary>
         /// <param name="account"></param>
         /// <param name="password"></param>
@@ -84,7 +84,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     执行交易，返回TransactionId，不等待执行结果
+        ///     execute tx and get transaction id
         /// </summary>
         /// <param name="method"></param>
         /// <param name="inputParameter"></param>
@@ -93,7 +93,7 @@ namespace AElfChain.Common.Contracts
         {
             var rawTx = GenerateBroadcastRawTx(method, inputParameter);
 
-            var txId = AsyncHelper.RunSync(() => ApiService.SendTransactionAsync(rawTx)).TransactionId;
+            var txId = NodeManager.SendTransaction(rawTx);
             Logger.Info($"Transaction method: {method}, TxId: {txId}");
             _txResultList.Enqueue(txId);
 
@@ -101,7 +101,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     执行交易，返回TransactionId，不等待执行结果
+        ///     send tx and get transaction id
         /// </summary>
         /// <param name="method"></param>
         /// <param name="inputParameter"></param>
@@ -112,7 +112,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     执行交易，等待执行结果后返回
+        ///     execution tx and wait result response
         /// </summary>
         /// <param name="method"></param>
         /// <param name="inputParameter"></param>
@@ -120,16 +120,16 @@ namespace AElfChain.Common.Contracts
         public TransactionResultDto ExecuteMethodWithResult(string method, IMessage inputParameter)
         {
             var rawTx = GenerateBroadcastRawTx(method, inputParameter);
-            var txId = AsyncHelper.RunSync(() => ApiService.SendTransactionAsync(rawTx)).TransactionId;
+            var txId = NodeManager.SendTransaction(rawTx);
             Logger.Info($"Transaction method: {method}, TxId: {txId}");
 
             //Check result
             Thread.Sleep(100); //in case of 'NotExisted' issue
             return NodeManager.CheckTransactionResult(txId);
         }
-        
+
         /// <summary>
-        /// 执行交易，如果已经存在，则不执行直接返回
+        ///     check tx whether exist or not before execution
         /// </summary>
         /// <param name="method"></param>
         /// <param name="inputParameter"></param>
@@ -140,16 +140,16 @@ namespace AElfChain.Common.Contracts
             var rawTx = GenerateBroadcastRawTx(method, inputParameter);
             //check whether tx exist or not
             var genTxId = TransactionUtil.CalculateTxId(rawTx);
-            var transactionResult = ApiService.GetTransactionResultAsync(genTxId).Result;
+            var transactionResult = AsyncHelper.RunSync(() => ApiClient.GetTransactionResultAsync(genTxId));
             if (transactionResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.NotExisted)
             {
-                Logger.Warn($"Found duplicate transaction.");
+                Logger.Warn("Found duplicate transaction.");
                 existed = true;
                 return transactionResult;
             }
 
             existed = false;
-            var txId = AsyncHelper.RunSync(() => ApiService.SendTransactionAsync(rawTx)).TransactionId;
+            var txId = NodeManager.SendTransaction(rawTx);
             Logger.Info($"Transaction method: {method}, TxId: {txId}");
 
             //Check result
@@ -158,18 +158,18 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     执行交易，等待执行结果后返回
+        ///     execution tx and wait execution result response
         /// </summary>
-        /// <param name="method">交易方法</param>
-        /// <param name="inputParameter">交易参数</param>
+        /// <param name="method">tx method</param>
+        /// <param name="inputParameter">tx input parameter</param>
         /// <returns></returns>
         public TransactionResultDto ExecuteMethodWithResult(T method, IMessage inputParameter)
         {
             return ExecuteMethodWithResult(method.ToString(), inputParameter);
         }
-        
+
         /// <summary>
-        /// 执行交易，如果已经存在，则不执行直接返回
+        ///     execution tx and check if exist return result
         /// </summary>
         /// <param name="method"></param>
         /// <param name="inputParameter"></param>
@@ -181,7 +181,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     切换执行用户
+        ///     switch contract execution owner
         /// </summary>
         /// <param name="account"></param>
         /// <param name="password"></param>
@@ -194,7 +194,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     检查所有执行合约结果
+        ///     check all txs results
         /// </summary>
         public void CheckTransactionResultList()
         {
@@ -205,7 +205,7 @@ namespace AElfChain.Common.Contracts
             {
                 var result = _txResultList.TryDequeue(out var txId);
                 if (!result) break;
-                var transactionResult = AsyncHelper.RunSync(() => ApiService.GetTransactionResultAsync(txId));
+                var transactionResult = AsyncHelper.RunSync(() => ApiClient.GetTransactionResultAsync(txId));
                 var status = transactionResult.Status.ConvertTransactionResultStatus();
                 switch (status)
                 {
@@ -226,7 +226,7 @@ namespace AElfChain.Common.Contracts
                 if (queueLength == _txResultList.Count)
                 {
                     queueSameTimes++;
-                    Thread.Sleep(1000);
+                    Thread.Sleep(2000);
                 }
                 else
                 {
@@ -240,7 +240,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     调用合约View方法
+        ///     call contract view method
         /// </summary>
         /// <param name="method"></param>
         /// <param name="input"></param>
@@ -252,7 +252,7 @@ namespace AElfChain.Common.Contracts
         }
 
         /// <summary>
-        ///     调用合约View方法
+        ///     call view method
         /// </summary>
         /// <param name="method"></param>
         /// <param name="input"></param>
@@ -266,14 +266,12 @@ namespace AElfChain.Common.Contracts
         #region Priority
 
         public INodeManager NodeManager { get; set; }
-        public IApiService ApiService => NodeManager.ApiService;
+        public AElfClient ApiClient => NodeManager.ApiClient;
         public string FileName { get; set; }
         public string CallAddress { get; set; }
         public Address CallAccount => CallAddress.ConvertAddress();
         public string ContractAddress { get; set; }
         public Address Contract => ContractAddress.ConvertAddress();
-
-        public static int Timeout { get; set; }
 
         public static ILog Logger = Log4NetHelper.GetLogger();
 
@@ -285,41 +283,16 @@ namespace AElfChain.Common.Contracts
 
         private void DeployContract()
         {
-            var requireAuthority = NodeInfoHelper.Config.RequireAuthority;
-            if (requireAuthority)
-            {
-                Logger.Info("Deploy contract with authority mode.");
-                var authority = new AuthorityManager(NodeManager, CallAddress);
-                var contractAddress = authority.DeployContractWithAuthority(CallAddress, FileName);
-                ContractAddress = contractAddress.GetFormatted();
-                return;
-            }
-
-            Logger.Info("Deploy contract without authority mode.");
-            var txId = NodeManager.DeployContract(CallAddress, FileName);
-            Logger.Info($"Transaction: DeploySmartContract, TxId: {txId}");
-
-            var result = GetContractAddress(txId, out _);
-            if (!result)
-                throw new Exception("Get contract address failed.");
+            Logger.Info("Deploy contract with authority mode.");
+            var authority = new AuthorityManager(NodeManager, CallAddress);
+            var miner = authority.GetCurrentMiners().First();
+            var contractAddress = authority.DeployContractWithAuthority(miner, FileName);
+            ContractAddress = contractAddress.GetFormatted();
         }
 
         private string GenerateBroadcastRawTx(string method, IMessage inputParameter)
         {
             return NodeManager.GenerateRawTransaction(CallAddress, ContractAddress, method, inputParameter);
-        }
-        
-        private bool GetContractAddress(string txId, out string contractAddress)
-        {
-            contractAddress = string.Empty;
-            var transactionResult = NodeManager.CheckTransactionResult(txId);
-            if (transactionResult?.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined)
-                return false;
-
-            contractAddress = transactionResult.ReadableReturnValue.Replace("\"", "");
-            ContractAddress = contractAddress;
-            Logger.Info($"Get contract address: TxId: {txId}, Address: {contractAddress}");
-            return true;
         }
 
         #endregion Methods

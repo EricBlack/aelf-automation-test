@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using AElf.Client.Dto;
+using AElf.Client.Service;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElfChain.SDK;
-using AElfChain.SDK.Models;
 using log4net;
 using Volo.Abp.Threading;
 
@@ -13,22 +13,22 @@ namespace AElf.Automation.RpcPerformance
 {
     public class ExecutionSummary
     {
-        private const int Phase = 120;
+        private const int Phase = 8;
         private static readonly ILog Logger = Log4NetHelper.GetLogger();
-        private readonly IApiService _apiService;
+        private readonly AElfClient _apiService;
         private long _blockHeight;
         private Dictionary<long, BlockDto> _blockMap;
 
         /// <summary>
-        ///     统计出块信息
+        ///     analyze generate blocks summary info
         /// </summary>
         /// <param name="nodeManager"></param>
-        /// <param name="fromStart">是否从高度为1开始检测</param>
+        /// <param name="fromStart">whether check from height 1</param>
         public ExecutionSummary(INodeManager nodeManager, bool fromStart = false)
         {
-            _apiService = nodeManager.ApiService;
+            _apiService = nodeManager.ApiClient;
             _blockMap = new Dictionary<long, BlockDto>();
-            _blockHeight = fromStart ? 1 : GetBlockHeight();
+            _blockHeight = fromStart ? 1 : AsyncHelper.RunSync(_apiService.GetBlockHeightAsync);
         }
 
         public void ContinuousCheckTransactionPerformance(CancellationToken ct)
@@ -41,10 +41,10 @@ namespace AElf.Automation.RpcPerformance
                     Logger.Warn("ContinuousCheckTransactionPerformance task was been cancelled.");
                     break;
                 }
-                
+
                 if (checkTimes == 60)
                     break;
-                var height = GetBlockHeight();
+                var height = AsyncHelper.RunSync(_apiService.GetBlockHeightAsync);
                 if (height == _blockHeight)
                 {
                     checkTimes++;
@@ -58,7 +58,7 @@ namespace AElf.Automation.RpcPerformance
                 for (var i = _blockHeight; i < height; i++)
                 {
                     var j = i;
-                    var block = GetBlockByHeight(j);
+                    var block = AsyncHelper.RunSync(() => _apiService.GetBlockByHeightAsync(j));
                     _blockMap.Add(j, block);
                     if (!_blockMap.Keys.Count.Equals(Phase)) continue;
                     SummaryBlockTransactionInPhase(_blockMap.Values.First(), _blockMap.Values.Last());
@@ -74,7 +74,7 @@ namespace AElf.Automation.RpcPerformance
             var totalTransactions = _blockMap.Values.Sum(o => o.Body.TransactionsCount);
             var averageTx = totalTransactions / Phase;
             var timePerBlock = GetPerBlockTimeSpan(startBlock, endBlockDto);
-            var timePerTx = totalTransactions / GetTotalBlockSeconds(startBlock, endBlockDto);
+            var timePerTx = totalTransactions * 1000 / GetTotalBlockSeconds(startBlock, endBlockDto);
             _blockMap = new Dictionary<long, BlockDto>();
             Logger.Info($"Summary Information: {Phase} blocks from height " +
                         $"{startBlock.Header.Height}~{endBlockDto.Header.Height} executed " +
@@ -82,16 +82,6 @@ namespace AElf.Automation.RpcPerformance
                         $"{startBlock.Header.Time:hh:mm:ss}~{endBlockDto.Header.Time:hh:mm:ss}. " +
                         $"Average each block generated in {timePerBlock} milliseconds. " +
                         $"{timePerTx} txs executed per second.");
-        }
-
-        private long GetBlockHeight()
-        {
-            return AsyncHelper.RunSync(_apiService.GetBlockHeightAsync);
-        }
-
-        private BlockDto GetBlockByHeight(long height)
-        {
-            return AsyncHelper.RunSync(() => _apiService.GetBlockByHeightAsync(height));
         }
 
         private static int GetPerBlockTimeSpan(BlockDto startBlock, BlockDto endBlockDto)
@@ -111,8 +101,9 @@ namespace AElf.Automation.RpcPerformance
             var hours = timeSpan.Hours;
             var minutes = timeSpan.Minutes;
             var seconds = timeSpan.Seconds;
+            var mileSeconds = timeSpan.Milliseconds;
 
-            return hours * 60 * 60 + minutes * 60 + seconds;
+            return 1000 * (hours * 60 * 60 + minutes * 60 + seconds) + mileSeconds;
         }
     }
 }

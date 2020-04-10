@@ -10,7 +10,10 @@ namespace AElfChain.Common.Contracts
         Buy,
         Sell,
         SetFeeRate,
-        SetManagerAddress,
+        ChangeConnectorController,
+        AddPairConnector,
+        EnableConnector,
+        UpdateConnector,
 
         //view
         GetTokenContractAddress,

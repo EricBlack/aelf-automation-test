@@ -1,14 +1,14 @@
-using AElfChain.Common.Helpers;
-using AElfChain.Common.Managers;
 using System;
 using AElf.Types;
+using AElfChain.Common.Helpers;
+using AElfChain.Common.Managers;
 
 namespace AElfChain.Console.Commands
 {
     public class QueryContractCommand : BaseCommand
     {
-        public QueryContractCommand(INodeManager nodeManager, ContractServices contractServices)
-            : base(nodeManager, contractServices)
+        public QueryContractCommand(INodeManager nodeManager, ContractManager contractManager)
+            : base(nodeManager, contractManager)
         {
             Logger = Log4NetHelper.GetLogger();
         }

@@ -1,12 +1,16 @@
 using System.Collections.Generic;
 using Acs0;
-using AElfChain.Common.Helpers;
-using AElfChain.Common.Managers;
+using Acs1;
+using AElf.Client.Dto;
 using AElf.Contracts.Genesis;
 using AElf.Types;
-using AElfChain.Common.Utils;
-using AElfChain.SDK.Models;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
+using AElfChain.Common.Managers;
 using Google.Protobuf;
+using Google.Protobuf.WellKnownTypes;
+using Shouldly;
+using Volo.Abp.Threading;
 
 namespace AElfChain.Common.Contracts
 {
@@ -22,6 +26,9 @@ namespace AElfChain.Common.Contracts
         ReleaseApprovedContract,
         ProposeNewContract,
         ProposeUpdateContract,
+        ReleaseCodeCheckedContract,
+        ChangeContractDeploymentController,
+        ChangeCodeCheckController,
 
         //view
         CurrentContractSerialNumber,
@@ -29,8 +36,10 @@ namespace AElfChain.Common.Contracts
         GetContractAuthor,
         GetContractHash,
         GetContractAddressByName,
+        GetSmartContractRegistration,
         GetSmartContractRegistrationByAddress,
-        GetDeployedContractAddressList
+        GetContractDeploymentController,
+        GetCodeCheckController
     }
 
     public class GenesisContract : BaseContract<GenesisMethod>
@@ -96,18 +105,51 @@ namespace AElfChain.Common.Contracts
             return address;
         }
 
-        public TransactionResultDto ReleaseApprovedContract(ReleaseApprovedContractInput input,
-            string caller = null)
+        public TransactionResultDto ReleaseApprovedContract(ReleaseContractInput input,
+            string caller)
         {
             SetAccount(caller);
-            var result = ExecuteMethodWithResult(GenesisMethod.ReleaseApprovedContract, new ReleaseApprovedContractInput
+            var result = ExecuteMethodWithResult(GenesisMethod.ReleaseApprovedContract, new ReleaseContractInput
             {
                 ProposalId = input.ProposalId,
                 ProposedContractInputHash = input.ProposedContractInputHash
             });
             return result;
         }
-        
+
+        public TransactionResultDto ReleaseCodeCheckedContract(ReleaseContractInput input,
+            string caller)
+        {
+            SetAccount(caller);
+            var result = ExecuteMethodWithResult(GenesisMethod.ReleaseCodeCheckedContract, new ReleaseContractInput
+            {
+                ProposalId = input.ProposalId,
+                ProposedContractInputHash = input.ProposedContractInputHash
+            });
+            return result;
+        }
+
+        public TransactionResult ProposeNewContract(ContractDeploymentInput input,
+            string caller = null)
+        {
+            var tester = GetTestStub<BasicContractZeroContainer.BasicContractZeroStub>(caller);
+            var result = AsyncHelper.RunSync(() => tester.ProposeNewContract.SendAsync(input));
+            result.TransactionResult.Status.ShouldBe(TransactionResultStatus.Mined,
+                result.TransactionResult.TransactionId.ToHex);
+
+            return result.TransactionResult;
+        }
+
+        public TransactionResult ProposeUpdateContract(ContractUpdateInput input,
+            string caller = null)
+        {
+            var tester = GetTestStub<BasicContractZeroContainer.BasicContractZeroStub>(caller);
+            var result = AsyncHelper.RunSync(() => tester.ProposeUpdateContract.SendAsync(input));
+            result.TransactionResult.Status.ShouldBe(TransactionResultStatus.Mined);
+
+            return result.TransactionResult;
+        }
+
         public Dictionary<NameProvider, Address> GetAllSystemContracts()
         {
             var dic = new Dictionary<NameProvider, Address>();
@@ -132,6 +174,11 @@ namespace AElfChain.Common.Contracts
             return GetContractAuthor(contractAddress.ConvertAddress());
         }
 
+        public AuthorityInfo GetContractDeploymentController()
+        {
+            return CallViewMethod<AuthorityInfo>(GenesisMethod.GetContractDeploymentController, new Empty());
+        }
+
         public BasicContractZeroContainer.BasicContractZeroStub GetGensisStub(string callAddress = null)
         {
             var caller = callAddress ?? CallAddress;
@@ -152,13 +199,14 @@ namespace AElfChain.Common.Contracts
                 {NameProvider.Vote, Hash.FromString("AElf.ContractNames.Vote")},
                 {NameProvider.Treasury, Hash.FromString("AElf.ContractNames.Treasury")},
                 {NameProvider.Token, Hash.FromString("AElf.ContractNames.Token")},
+                {NameProvider.TokenHolder, Hash.FromString("AElf.ContractNames.TokenHolder")},
                 {NameProvider.TokenConverter, Hash.FromString("AElf.ContractNames.TokenConverter")},
                 {NameProvider.Consensus, Hash.FromString("AElf.ContractNames.Consensus")},
                 {NameProvider.ParliamentAuth, Hash.FromString("AElf.ContractNames.Parliament")},
                 {NameProvider.CrossChain, Hash.FromString("AElf.ContractNames.CrossChain")},
-                {NameProvider.AssociationAuth, Hash.FromString("AElf.ContractNames.AssociationAuth")},
+                {NameProvider.AssociationAuth, Hash.FromString("AElf.ContractNames.Association")},
                 {NameProvider.Configuration, Hash.FromString("AElf.ContractNames.Configuration")},
-                {NameProvider.ReferendumAuth, Hash.FromString("AElf.ContractNames.ReferendumAuth")}
+                {NameProvider.ReferendumAuth, Hash.FromString("AElf.ContractNames.Referendum")}
             };
 
             return dic;

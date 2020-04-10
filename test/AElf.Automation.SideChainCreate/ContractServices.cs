@@ -1,6 +1,6 @@
+using AElf.Types;
 using AElfChain.Common.Contracts;
 using AElfChain.Common.Managers;
-using AElf.Types;
 
 namespace AElf.Automation.SideChainCreate
 {
@@ -31,7 +31,7 @@ namespace AElf.Automation.SideChainCreate
         {
             GenesisService = GenesisContract.GetGenesisContract(NodeManager, CallAddress);
 
-            //TokenService contract
+            //Token contract
             TokenService = GenesisService.GetTokenContract();
 
             //Consensus contract

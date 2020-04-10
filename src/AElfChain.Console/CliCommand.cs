@@ -6,7 +6,6 @@ using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
 using AElfChain.Console.Commands;
 using AElfChain.Console.InputOption;
-using AElfChain.SDK;
 using log4net;
 using Shouldly;
 
@@ -14,22 +13,21 @@ namespace AElfChain.Console
 {
     public class CliCommand
     {
-        public List<BaseCommand> Commands;
-
         private readonly ILog Logger = Log4NetHelper.GetLogger();
+        public List<BaseCommand> Commands;
 
         public CliCommand(INodeManager nodeManager)
         {
             NodeManager = nodeManager;
             var bp = NodeInfoHelper.Config.Nodes.First();
-            Contracts = new ContractServices(nodeManager, bp.Account);
+            ContractManager = new ContractManager(nodeManager, bp.Account);
             Commands = new List<BaseCommand>();
-            InitializeCommands();
+            RegisterCommands();
         }
 
         private INodeManager NodeManager { get; }
 
-        private ContractServices Contracts { get; }
+        private ContractManager ContractManager { get; }
 
         public List<string> CommandNames => Commands.Select(o => o.GetCommandInfo().Name).ToList();
 
@@ -44,7 +42,6 @@ namespace AElfChain.Console
             {
                 "[Input command order/name]=> ".WriteWarningLine(changeLine: false);
                 var input = InputReader.ReadLine();
-                //var input = Prompt.Select("[Input command order/name]", GetCommandList());
 
                 //quit command
                 var quitCommand = new List<string> {"quit", "exit", "close"};
@@ -118,10 +115,6 @@ namespace AElfChain.Console
                 {
                     Logger.Error($"Error: {e.GetType().Name}, Message: {e.Message}");
                 }
-                catch (AElfChainApiException e)
-                {
-                    Logger.Error($"Error: {e.GetType().Name}, Message: {e.Message}");
-                }
                 catch (Exception e)
                 {
                     Logger.Error(e);
@@ -129,24 +122,24 @@ namespace AElfChain.Console
             }
         }
 
-        private void InitializeCommands()
+        private void RegisterCommands()
         {
-            Commands.Add(new BlockChainCommand(NodeManager, Contracts));
-            Commands.Add(new CrossChainTxCommand(NodeManager, Contracts));
-            Commands.Add(new AnalyzeCommand(NodeManager, Contracts));
-            Commands.Add(new ContractQueryCommand(NodeManager, Contracts));
-            Commands.Add(new ContractExecutionCommand(NodeManager, Contracts));
-            Commands.Add(new QueryContractCommand(NodeManager, Contracts));
-            Commands.Add(new QueryTokenCommand(NodeManager, Contracts));
-            Commands.Add(new QueryProposalCommand(NodeManager, Contracts));
-            Commands.Add(new ConsensusCommand(NodeManager, Contracts));
-            Commands.Add(new DeployCommand(NodeManager, Contracts));
-            Commands.Add(new UpdateCommand(NodeManager, Contracts));
-            Commands.Add(new TransferCommand(NodeManager, Contracts));
-            Commands.Add(new ResourceTradeCommand(NodeManager, Contracts));
-            Commands.Add(new SetConnectorCommand(NodeManager, Contracts));
-            Commands.Add(new SetTransactionFeeCommand(NodeManager, Contracts));
-            Commands.Add(new TransactionLimitCommand(NodeManager, Contracts));
+            Commands.Add(new ChainApiCommand(NodeManager, ContractManager));
+            Commands.Add(new CrossChainTxCommand(NodeManager, ContractManager));
+            Commands.Add(new AnalyzeCommand(NodeManager, ContractManager));
+            Commands.Add(new ContractQueryCommand(NodeManager, ContractManager));
+            Commands.Add(new ContractExecutionCommand(NodeManager, ContractManager));
+            Commands.Add(new QueryContractCommand(NodeManager, ContractManager));
+            Commands.Add(new QueryTokenCommand(NodeManager, ContractManager));
+            Commands.Add(new ProposalCommand(NodeManager, ContractManager));
+            Commands.Add(new ConsensusCommand(NodeManager, ContractManager));
+            Commands.Add(new DeployCommand(NodeManager, ContractManager));
+            Commands.Add(new UpdateCommand(NodeManager, ContractManager));
+            Commands.Add(new TransferCommand(NodeManager, ContractManager));
+            Commands.Add(new ResourceTradeCommand(NodeManager, ContractManager));
+            Commands.Add(new SetConnectorCommand(NodeManager, ContractManager));
+            Commands.Add(new SetTransactionFeeCommand(NodeManager, ContractManager));
+            Commands.Add(new TransactionLimitCommand(NodeManager, ContractManager));
         }
 
         private void GetUsageInfo()

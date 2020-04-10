@@ -5,9 +5,9 @@ using System.Threading;
 using AElf.Contracts.MultiToken;
 using AElfChain.Common;
 using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElfChain.Common.Utils;
 using log4net;
 
 namespace AElf.Automation.RpcPerformance
@@ -56,24 +56,34 @@ namespace AElf.Automation.RpcPerformance
             foreach (var bp in bps)
             {
                 var balance = SystemToken.GetUserBalance(bp.Account, symbol);
-                if (balance < 300_0000_00000000) continue;
+                if (balance < 3000_0000_00000000) continue;
                 SystemToken.SetAccount(bp.Account, bp.Password);
                 foreach (var tester in testers)
                 {
                     if (tester == bp.Account) continue;
                     var userBalance = SystemToken.GetUserBalance(tester, symbol);
-                    if (userBalance < 1_000_00000000)
+                    if (userBalance < 100_0000_00000000)
                         SystemToken.ExecuteMethodWithTxId(TokenMethod.Transfer, new TransferInput
                         {
                             To = tester.ConvertAddress(),
-                            Amount = 1_0000_00000000,
+                            Amount = 100_0000_00000000,
                             Symbol = symbol,
-                            Memo = $"Transfer token for test {Guid.NewGuid()}"
+                            Memo = $"T-{Guid.NewGuid()}"
                         });
                 }
 
                 SystemToken.CheckTransactionResultList();
                 break;
+            }
+        }
+
+        public static string GenerateNotExistTokenSymbol(INodeManager nodeManager)
+        {
+            while (true)
+            {
+                var symbol = CommonHelper.RandomString(8, false);
+                var tokenInfo = nodeManager.GetTokenInfo(symbol);
+                if (tokenInfo.Equals(new TokenInfo())) return symbol;
             }
         }
 

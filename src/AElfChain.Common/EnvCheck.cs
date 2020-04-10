@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using AElfChain.Common.DtoExtension;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElfChain.SDK;
 using log4net;
+using Volo.Abp.Threading;
 
 namespace AElfChain.Common
 {
@@ -17,18 +18,18 @@ namespace AElfChain.Common
         private static readonly string AccountDir = CommonHelper.GetCurrentDataDir();
 
         private static readonly EnvCheck Instance = new EnvCheck();
-        
-        public static EnvCheck GetDefaultEnvCheck()
-        {
-            return Instance;
-        }
-        
+
         private EnvCheck()
         {
             _config = NodeInfoHelper.Config;
 
             CheckInitialEnvironment();
             GetConfigNodesPublicKey();
+        }
+
+        public static EnvCheck GetDefaultEnvCheck()
+        {
+            return Instance;
         }
 
         private void CheckInitialEnvironment()
@@ -41,11 +42,11 @@ namespace AElfChain.Common
             CheckAllNodesConnection();
         }
 
-        public List<string> GenerateOrGetTestUsers(int count)
+        public List<string> GenerateOrGetTestUsers(int count, string url = null)
         {
-            var url = _config.Nodes.First(o => o.Status).Endpoint;
+            if (url == null)
+                url = _config.Nodes.First(o => o.Status).Endpoint;
             var webHelper = new NodeManager(url, AccountDir);
-
             var accounts = webHelper.ListAccounts();
             var testUsers = accounts.FindAll(o => !NodeInfoHelper.GetAccounts().Contains(o));
             if (testUsers.Count >= count) return testUsers.Take(count).ToList();
@@ -89,14 +90,14 @@ namespace AElfChain.Common
 
         private void CheckNodeConnection(Node node)
         {
-            var service = AElfChainClient.GetClient(node.Endpoint);
+            var service = AElfClientExtension.GetClient(node.Endpoint);
             try
             {
-                node.ApiService = service;
-                var chainStatus = service.GetChainStatusAsync().Result;
+                node.ApiClient = service;
+                var chainStatus = AsyncHelper.RunSync(service.GetChainStatusAsync);
                 if (chainStatus == null) return;
                 node.Status = true;
-                var height = service.GetBlockHeightAsync().Result;
+                var height = AsyncHelper.RunSync(service.GetBlockHeightAsync);
                 Logger.Info($"Node {node.Name} [{node.Endpoint}] connection success, block height: {height}");
             }
             catch (Exception ex)

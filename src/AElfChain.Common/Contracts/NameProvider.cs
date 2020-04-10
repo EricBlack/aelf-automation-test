@@ -10,6 +10,7 @@ namespace AElfChain.Common.Contracts
         Vote,
         Treasury,
         Token,
+        TokenHolder,
         TokenConverter,
         Consensus,
         ParliamentAuth,
@@ -20,7 +21,13 @@ namespace AElfChain.Common.Contracts
 
         TestBasicFunction,
         TestUpdateFunction,
+        TestBasicSecurity,
         TestPerformance,
+        TestEvents,
+        TestTransactionFees,
+        TestA,
+        TestB,
+        TestC,
         ExecutionAcs5,
         ExecutionAcs8
     }

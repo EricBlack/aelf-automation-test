@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using AElfChain.Common;
 using AElfChain.Common.Helpers;
-using AElf.Automation.SideChainEconomicTest.EconomicTest;
 
 namespace AElf.Automation.SideChainEconomicTest
 {
@@ -27,15 +26,15 @@ namespace AElf.Automation.SideChainEconomicTest
                 await mainTest.MainManager.BuyResources(ChainConstInfo.ChainAccount, 2000);
                 await mainTest.Transfer_From_Main_To_Side();
 
-                //设置资源币价格
-                sideTest.SideManager.SetResourceUnitPrice(sideTest.SideA);
-
                 acs8Contract = await sideTest.DeployContract_And_Transfer_Resources();
             }
 
+            /* comment due to Acs8ContractTest removed on dev
             var contract = new Acs8ContractTest(sideTest.SideA, acs8Contract);
             await contract.ExecutionTest();
             await Task.Delay(50);
+            */
+
             sideTest.SideA.GetTokenBalances(acs8Contract);
 
             logger.Info("Get side chain consensus resource tokens");

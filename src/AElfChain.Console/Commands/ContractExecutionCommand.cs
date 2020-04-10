@@ -1,7 +1,7 @@
 using System;
 using System.Linq;
 using AElfChain.Common.Contracts;
-using AElfChain.Common.ContractSerializer;
+using AElfChain.Common.Contracts.Serializer;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
 using AElfChain.Console.InputOption;
@@ -12,32 +12,33 @@ namespace AElfChain.Console.Commands
 {
     public class ContractExecutionCommand : BaseCommand
     {
-        public ContractExecutionCommand(INodeManager nodeManager, ContractServices contractServices)
-            : base(nodeManager, contractServices)
+        public ContractExecutionCommand(INodeManager nodeManager, ContractManager contractManager)
+            : base(nodeManager, contractManager)
         {
             Logger = Log4NetHelper.GetLogger();
-            ContractHandler = new ContractHandler();
+            ContractSerializer = new ContractSerializer();
         }
 
-        private ContractHandler ContractHandler { get; }
+        private ContractSerializer ContractSerializer { get; }
 
         public override void RunCommand()
         {
             "Select system contract name: ".WriteSuccessLine();
-            var contractEngine = new CommandsCompletionEngine(ContractHandler.SystemContractsDescriptors.Keys
+            var contractEngine = new CommandsCompletionEngine(ContractSerializer.SystemContractsDescriptors.Keys
                 .Select(o => o.ToString()).ToList());
             var contractReader = new ConsoleReader(contractEngine);
             var input = CommandOption.InputParameters(1, contractReader);
             if (input == null)
                 return;
             var nameProvider = input[0].ConvertNameProvider();
-            var contractInfo = ContractHandler.GetContractInfo(nameProvider);
+            var contractInfo = ContractSerializer.GetContractInfo(nameProvider);
             //contract info
             string contractAddress;
             if (input.Length == 2)
                 contractAddress = input[1];
             else
-                contractAddress = Services.GetContractAddress(input[0]) ?? CommandOption.InputParameters(1)[0];
+                contractAddress = Services.GetContractAddress(input[0]) ??
+                                  CommandOption.InputParameters(1, "Input contract address")[0];
 
             $"Contract: {input[0]}, Address: {contractAddress}".WriteWarningLine();
             contractInfo.GetContractMethodsInfo();

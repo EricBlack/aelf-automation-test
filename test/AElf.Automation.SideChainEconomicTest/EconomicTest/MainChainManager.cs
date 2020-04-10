@@ -2,14 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Acs0;
-using AElfChain.Common.Contracts;
-using AElfChain.Common.Helpers;
-using AElfChain.Common.Managers;
+using AElf.Client.Service;
 using AElf.Contracts.MultiToken;
 using AElf.Contracts.TokenConverter;
 using AElf.Types;
 using AElfChain.Common;
-using AElfChain.SDK;
+using AElfChain.Common.Contracts;
+using AElfChain.Common.Helpers;
+using AElfChain.Common.Managers;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using log4net;
@@ -21,7 +21,7 @@ namespace AElf.Automation.SideChainEconomicTest.EconomicTest
     {
         public static ILog Logger = Log4NetHelper.GetLogger();
 
-        public List<string> Symbols = new List<string> {"CPU", "RAM", "NET", "STO"};
+        public List<string> Symbols = new List<string> {"READ", "WRITE", "STORAGE", "TRAFFIC"};
 
 
         public MainChainManager(string serviceUrl, string account)
@@ -37,7 +37,7 @@ namespace AElf.Automation.SideChainEconomicTest.EconomicTest
 
         public INodeManager NodeManager => MainChain.NodeManager;
 
-        public IApiService ApiService => MainChain.NodeManager.ApiService;
+        public AElfClient ApiClient => MainChain.NodeManager.ApiClient;
 
         public async Task BuyResources(string account, long amount)
         {
@@ -96,7 +96,7 @@ namespace AElf.Automation.SideChainEconomicTest.EconomicTest
             var crossStub = sideChain.GenesisService.GetCrossChainStub();
             while (true)
             {
-                var chainStatus = await ApiService.GetChainStatusAsync();
+                var chainStatus = await ApiClient.GetChainStatusAsync();
                 if (chainStatus.LastIrreversibleBlockHeight >= blockNumber)
                 {
                     try

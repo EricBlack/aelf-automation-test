@@ -2,14 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using AElfChain.Common;
-using AElfChain.Common.Contracts;
-using AElfChain.Common.Helpers;
 using AElf.Contracts.Election;
 using AElf.Contracts.MultiToken;
 using AElf.Types;
-using AElfChain.Common.Utils;
-using AElfChain.SDK.Models;
+using AElfChain.Common;
+using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using log4net;
 using Shouldly;
@@ -46,10 +46,12 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
 
         public void TokenScenarioJob()
         {
-            ExecuteStandaloneTask(actions: new Action[]
+            ExecuteStandaloneTask(new Action[]
             {
                 TransferAction,
                 ApproveTransferAction,
+                ParallelTransferAction,
+                ParallelTransferFromAction,
                 () => PrepareTesterToken(Testers),
                 UpdateEndpointAction
             });
@@ -68,11 +70,12 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                     Amount = amount,
                     Symbol = NodeOption.NativeTokenSymbol,
                     To = AddressHelper.Base58StringToAddress(to),
-                    Memo = $"Transfer amount={amount} with Guid={Guid.NewGuid()}"
-                });
+                    Memo = $"T-{Guid.NewGuid()}"
+                }, out var existed);
+                if (existed) return;
                 transferTxResult.Status.ConvertTransactionResultStatus().ShouldBe(TransactionResultStatus.Mined);
 
-                var transferFee = transferTxResult.TransactionFee.GetDefaultTransactionFee();
+                var transferFee = transferTxResult.GetDefaultTransactionFee();
                 var afterFrom = Token.GetUserBalance(from);
                 var afterTo = Token.GetUserBalance(to);
                 var result = true;
@@ -101,6 +104,191 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             }
         }
 
+        private void ParallelTransferAction()
+        {
+            var list = new List<TxItem>();
+            //generate transactions
+            for (var i = 1; i < 6; i++)
+            {
+                GetTransferPair(out var from, out var to, out var amount);
+                var rawTx = Services.NodeManager.GenerateRawTransaction(from, Token.ContractAddress,
+                    nameof(TokenMethod.Transfer),
+                    new TransferInput
+                    {
+                        To = to.ConvertAddress(),
+                        Amount = amount,
+                        Symbol = "ELF",
+                        Memo = $"PT-{Guid.NewGuid()}"
+                    });
+                var transaction =
+                    Transaction.Parser.ParseFrom(ByteString.CopyFrom(ByteArrayHelper.HexStringToByteArray(rawTx)));
+                var txId = transaction.GetHash().ToHex();
+                list.Add(new TxItem
+                {
+                    From = from,
+                    To = to,
+                    Amount = amount,
+                    RawTx = rawTx,
+                    TxId = txId
+                });
+            }
+
+            var testers = list.Select(o => o.From).Concat(list.Select(o => o.To)).Distinct().ToList();
+
+            var beforeBalances = new Dictionary<string, long>();
+            foreach (var tester in testers)
+            {
+                var balance = Token.GetUserBalance(tester);
+                beforeBalances.Add(tester, balance);
+            }
+
+            //execute transactions
+            foreach (var rawTx in list.Select(o => o.RawTx).ToList()) Services.NodeManager.SendTransaction(rawTx);
+
+            Services.NodeManager.CheckTransactionListResult(list.Select(o => o.TxId).ToList());
+
+            //verify result
+            var afterBalances = new Dictionary<string, long>();
+            foreach (var tester in testers)
+            {
+                var balance = Token.GetUserBalance(tester);
+                afterBalances.Add(tester, balance);
+            }
+
+            //check fee
+            var checkResult = true;
+            foreach (var tx in list)
+            {
+                var transactionResult =
+                    AsyncHelper.RunSync(() => Services.NodeManager.ApiClient.GetTransactionResultAsync(tx.TxId));
+                var status = transactionResult.Status.ConvertTransactionResultStatus();
+                if (status == TransactionResultStatus.Mined)
+                {
+                    beforeBalances[tx.From] -= tx.Amount + transactionResult.GetDefaultTransactionFee();
+                    beforeBalances[tx.To] += tx.Amount;
+                }
+                else if (status == TransactionResultStatus.Failed) // failed tx only check tx fee
+                {
+                    beforeBalances[tx.From] -= transactionResult.GetDefaultTransactionFee();
+                }
+                else
+                {
+                    checkResult = false;
+                    Logger.Error($"Transaction status {status} cannot check result.");
+                }
+            }
+
+            if (checkResult)
+                //check all balance
+                foreach (var tester in testers)
+                    beforeBalances[tester].ShouldBe(afterBalances[tester]);
+        }
+
+        private void ParallelTransferFromAction()
+        {
+            var approveList = new List<TxItem>();
+            //execute approve operation
+            for (var i = 1; i < 6; i++)
+            {
+                GetTransferPair(out var from, out var to, out var amount);
+                var txId = Services.NodeManager.SendTransaction(from, Token.ContractAddress,
+                    nameof(TokenMethod.Approve),
+                    new ApproveInput
+                    {
+                        Spender = to.ConvertAddress(),
+                        Symbol = "ELF",
+                        Amount = amount
+                    });
+                approveList.Add(new TxItem
+                {
+                    From = from,
+                    To = to,
+                    Amount = amount,
+                    TxId = txId
+                });
+            }
+
+            Services.NodeManager.CheckTransactionListResult(approveList.Select(o => o.TxId).ToList());
+
+            //execute transferFrom operation
+            var transferFromList = new List<TxItem>();
+            foreach (var tx in approveList)
+            {
+                var rawTx = Services.NodeManager.GenerateRawTransaction(tx.To, Token.ContractAddress,
+                    nameof(TokenMethod.TransferFrom),
+                    new TransferFromInput
+                    {
+                        From = tx.From.ConvertAddress(),
+                        To = tx.To.ConvertAddress(),
+                        Amount = tx.Amount,
+                        Symbol = "ELF",
+                        Memo = $"TF-{Guid.NewGuid()}"
+                    });
+                var transaction =
+                    Transaction.Parser.ParseFrom(ByteString.CopyFrom(ByteArrayHelper.HexStringToByteArray(rawTx)));
+                var txId = transaction.GetHash().ToHex();
+                transferFromList.Add(new TxItem
+                {
+                    From = tx.To,
+                    To = tx.From,
+                    Amount = tx.Amount,
+                    RawTx = rawTx,
+                    TxId = txId
+                });
+            }
+
+            var testers = transferFromList.Select(o => o.From).Concat(transferFromList.Select(o => o.To)).Distinct()
+                .ToList();
+
+            var beforeBalances = new Dictionary<string, long>();
+            foreach (var tester in testers)
+            {
+                var balance = Token.GetUserBalance(tester);
+                beforeBalances.Add(tester, balance);
+            }
+
+            //execute transactions
+            foreach (var rawTx in transferFromList.Select(o => o.RawTx).ToList())
+                Services.NodeManager.SendTransaction(rawTx);
+            Services.NodeManager.CheckTransactionListResult(transferFromList.Select(o => o.TxId).ToList());
+
+            //verify result
+            var afterBalances = new Dictionary<string, long>();
+            foreach (var tester in testers)
+            {
+                var balance = Token.GetUserBalance(tester);
+                afterBalances.Add(tester, balance);
+            }
+
+            //check fee
+            var checkResult = true;
+            foreach (var tx in transferFromList)
+            {
+                var transactionResult =
+                    AsyncHelper.RunSync(() => Services.NodeManager.ApiClient.GetTransactionResultAsync(tx.TxId));
+                var status = transactionResult.Status.ConvertTransactionResultStatus();
+                if (status == TransactionResultStatus.Mined)
+                {
+                    beforeBalances[tx.From] += tx.Amount - transactionResult.GetDefaultTransactionFee();
+                    beforeBalances[tx.To] -= tx.Amount;
+                }
+                else if (status == TransactionResultStatus.Failed) // failed tx only check tx fee
+                {
+                    beforeBalances[tx.From] -= transactionResult.GetDefaultTransactionFee();
+                }
+                else
+                {
+                    checkResult = false;
+                    Logger.Error($"Transaction status {status} cannot check result.");
+                }
+            }
+
+            if (checkResult)
+                //check all balance
+                foreach (var tester in testers)
+                    beforeBalances[tester].ShouldBe(afterBalances[tester]);
+        }
+
         private void ApproveTransferAction()
         {
             GetTransferPair(out var from, out var to, out var amount);
@@ -122,35 +310,34 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                     {
                         var newAllowance = Token.GetAllowance(from, to);
                         if (newAllowance == allowance + 1000_00000000)
-                        {
                             Logger.Info($"Approve success - from {from} to {to} with amount {amount}.");
-                        }
                         else
-                        {
                             Logger.Error(
                                 $"Allowance check failed. {NodeOption.NativeTokenSymbol}: {allowance + 1000_00000000}/{newAllowance}");
-                        }
 
                         allowance = newAllowance;
                     }
                     else
+                    {
                         return;
+                    }
                 }
 
                 var beforeFrom = Token.GetUserBalance(from);
                 var beforeTo = Token.GetUserBalance(to);
-                var tokenStub = Token.GetTestStub<TokenContractContainer.TokenContractStub>(to);
-                var transactionResult = AsyncHelper.RunSync(() => tokenStub.TransferFrom.SendAsync(new TransferFromInput
+                token = Token.GetNewTester(to);
+                var transactionResult = token.ExecuteMethodWithResult(TokenMethod.TransferFrom, new TransferFromInput
                 {
                     Amount = amount,
                     From = from.ConvertAddress(),
                     To = to.ConvertAddress(),
                     Symbol = NodeOption.NativeTokenSymbol,
-                    Memo = $"TransferFrom amount={amount} with Guid={Guid.NewGuid()}"
-                }));
-                if (transactionResult.TransactionResult.Status != TransactionResultStatus.Mined) return;
+                    Memo = $"TF-{Guid.NewGuid()}"
+                }, out var existed);
+                if (existed) return; //check tx whether existed
+                if (transactionResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
 
-                var transactionFee = transactionResult.TransactionResult.TransactionFee.GetDefaultTransactionFee();
+                var transactionFee = transactionResult.GetDefaultTransactionFee();
                 var afterFrom = Token.GetUserBalance(from);
                 var afterTo = Token.GetUserBalance(to);
                 var afterAllowance = Token.GetAllowance(from, to);
@@ -230,7 +417,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                     Symbol = NodeOption.NativeTokenSymbol,
                     Amount = 500_000_00000000 - balance,
                     To = AddressHelper.Base58StringToAddress(user),
-                    Memo = $"Transfer for testing - {Guid.NewGuid()}"
+                    Memo = $"{Guid.NewGuid()}"
                 });
                 Thread.Sleep(10);
             }
@@ -256,5 +443,14 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 return;
             }
         }
+    }
+
+    public struct TxItem
+    {
+        public string TxId { get; set; }
+        public string RawTx { get; set; }
+        public string From { get; set; }
+        public string To { get; set; }
+        public long Amount { get; set; }
     }
 }

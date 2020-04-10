@@ -1,7 +1,7 @@
 using Acs1;
+using AElf.Types;
 using AElfChain.Common.Helpers;
 using AElfChain.Common.Managers;
-using AElf.Types;
 using AElfChain.Console.InputOption;
 using Google.Protobuf.WellKnownTypes;
 using Newtonsoft.Json;
@@ -11,8 +11,8 @@ namespace AElfChain.Console.Commands
 {
     public class SetTransactionFeeCommand : BaseCommand
     {
-        public SetTransactionFeeCommand(INodeManager nodeManager, ContractServices contractServices)
-            : base(nodeManager, contractServices)
+        public SetTransactionFeeCommand(INodeManager nodeManager, ContractManager contractManager)
+            : base(nodeManager, contractManager)
         {
         }
 

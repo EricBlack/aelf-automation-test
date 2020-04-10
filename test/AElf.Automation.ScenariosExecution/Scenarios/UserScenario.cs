@@ -2,15 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using AElfChain.Common;
-using AElfChain.Common.Contracts;
-using AElfChain.Common.Helpers;
 using AElf.Contracts.Consensus.AEDPoS;
 using AElf.Contracts.Election;
 using AElf.Contracts.MultiToken;
 using AElf.Contracts.Profit;
 using AElf.Types;
-using AElfChain.SDK.Models;
+using AElfChain.Common;
+using AElfChain.Common.Contracts;
+using AElfChain.Common.DtoExtension;
+using AElfChain.Common.Helpers;
 using Google.Protobuf.WellKnownTypes;
 using log4net;
 
@@ -116,14 +116,13 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             var profit = Profit.GetNewTester(account);
             var profitResult = profit.ExecuteMethodWithResult(ProfitMethod.ClaimProfits, new ClaimProfitsInput
             {
-                SchemeId = schemeId,
-                Symbol = NodeOption.NativeTokenSymbol
+                SchemeId = schemeId
             }, out var existed);
-            if (existed) return; //交易已经存在，不再执行
+            if (existed) return; //if found tx existed and return
             if (profitResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
 
             var checkResult = true;
-            var profitTransactionFee = profitResult.TransactionFee.GetDefaultTransactionFee();
+            var profitTransactionFee = profitResult.GetDefaultTransactionFee();
             var afterBalance = Token.GetUserBalance(account);
 
             if (afterBalance + profitTransactionFee != beforeBalance + profitAmount)
@@ -171,7 +170,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                     Symbol = NodeOption.NativeTokenSymbol,
                     Amount = transferAmount,
                     To = AddressHelper.Base58StringToAddress(account),
-                    Memo = $"Transfer for voting = {Guid.NewGuid()}"
+                    Memo = $"Transfer={Guid.NewGuid()}"
                 });
                 if (transferTxResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
                 beforeElfBalance = Token.GetUserBalance(account);
@@ -191,7 +190,7 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
             if (voteResult.Status.ConvertTransactionResultStatus() != TransactionResultStatus.Mined) return;
             var afterElfBalance = Token.GetUserBalance(account);
             var afterVoteBalance = Token.GetUserBalance(account, "VOTE");
-            var transactionFee = voteResult.TransactionFee.GetDefaultTransactionFee();
+            var transactionFee = voteResult.GetDefaultTransactionFee();
             var afterCandidateVote = Election.GetCandidateVoteCount(candidatePublicKey);
 
             var checkResult = true;
@@ -224,10 +223,11 @@ namespace AElf.Automation.ScenariosExecution.Scenarios
                 );
         }
 
-        public static void GetCandidates(ElectionContract election)
+        public static List<string> GetCandidates(ElectionContract election)
         {
             var candidatePublicKeys = election.CallViewMethod<Candidates>(ElectionMethod.GetCandidates, new Empty());
             _candidates = candidatePublicKeys.Pubkeys.Select(o => o.ToByteArray().ToHex()).ToList();
+            return _candidates;
         }
 
         private void GetCandidatesExcludeCurrentMiners()

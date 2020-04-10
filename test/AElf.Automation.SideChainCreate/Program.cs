@@ -1,5 +1,5 @@
-﻿using System.Collections.Generic;
-using Acs7;
+﻿using Acs7;
+using AElfChain.Common;
 using AElfChain.Common.Helpers;
 using log4net;
 
@@ -19,10 +19,15 @@ namespace AElf.Automation.SideChainCreate
 
             //Init Logger
             Log4NetHelper.LogInit("SideChainCreate");
+            var testEnvironment = ConfigHelper.Config.TestEnvironment;
+            var environmentInfo =
+                ConfigHelper.Config.EnvironmentInfos.Find(o => o.Environment.Contains(testEnvironment));
+
+            var configFile = environmentInfo.ConfigFile;
+            NodeInfoHelper.SetConfig(configFile);
 
             #endregion
 
-            var proposals = new List<string>();
             var operation = new Operation();
             var sideChainInfos = ConfigHelper.Config.SideChainInfos;
             var approveTokenAmount = ConfigHelper.Config.ApproveTokenAmount;
@@ -37,19 +42,18 @@ namespace AElf.Automation.SideChainCreate
                     TokenName = $"Side chain token {sideChainInfo.TokenSymbol}",
                     Decimals = 8,
                     IsBurnable = true,
-                    Issuer = AddressHelper.Base58StringToAddress(operation.InitAccount),
+                    IsProfitable = true,
+                    Issuer = AddressHelper.Base58StringToAddress(operation.Creator),
                     TotalSupply = 10_00000000_00000000
                 };
-                var proposal = operation.CreateProposal(sideChainInfo.IndexingPrice, sideChainInfo.LockedTokenAmount,
+                var proposal = operation.RequestChainCreation(sideChainInfo.IndexingPrice,
+                    sideChainInfo.LockedTokenAmount,
                     sideChainInfo.IsPrivilegePreserved, tokenInfo);
-                proposals.Add(proposal);
-            }
-
-            foreach (var proposal in proposals)
-            {
+                Logger.Info($"Proposal is {proposal}");
                 operation.ApproveProposal(proposal);
-                var chainIdResult = operation.ReleaseProposal(proposal);
+                var chainIdResult = operation.ReleaseSideChainCreation(proposal, out var organization);
                 var chainId = ChainHelper.ConvertChainIdToBase58(chainIdResult);
+                Logger.Info($"Association organization is {organization}");
                 Logger.Info($"Side Chain : {chainId} created successfully");
             }
         }

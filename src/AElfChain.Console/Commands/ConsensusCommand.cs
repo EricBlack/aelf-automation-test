@@ -12,8 +12,8 @@ namespace AElfChain.Console.Commands
 {
     public class ConsensusCommand : BaseCommand
     {
-        public ConsensusCommand(INodeManager nodeManager, ContractServices contractServices)
-            : base(nodeManager, contractServices)
+        public ConsensusCommand(INodeManager nodeManager, ContractManager contractManager)
+            : base(nodeManager, contractManager)
         {
         }
 
@@ -43,7 +43,7 @@ namespace AElfChain.Console.Commands
             return new CommandInfo
             {
                 Name = "consensus",
-                Description = "Query current consensus miners"
+                Description = "Query current miners information"
             };
         }
 
